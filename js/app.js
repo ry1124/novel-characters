@@ -1361,13 +1361,20 @@ function renderFamilyTree() {
   const selfPeopleBoxes = midBoxes.slice(0, selfRowPeople.length);
   if (parentsBoxes.length && selfPeopleBoxes.length) {
     const parentBottomY = rowY.parents + TREE_BOX_H;
-    const busY = (parentBottomY + rowY.mid) / 2;
+    const barY = parentBottomY + (rowY.mid - parentBottomY) * 0.35;
+    const busY = parentBottomY + (rowY.mid - parentBottomY) * 0.65;
+    const parentXs = parentsBoxes.map((b) => b.cx);
+    const parentLeft = Math.min(...parentXs), parentRight = Math.max(...parentXs);
+    const parentCenterX = (parentLeft + parentRight) / 2;
     parentsBoxes.forEach((b, i) => {
       const isAdoptive = parentEntries[i].rel === 'adoptiveFather' || parentEntries[i].rel === 'adoptiveMother';
-      drawConnector(b.cx, parentBottomY, b.cx, busY, isAdoptive);
+      drawConnector(b.cx, parentBottomY, b.cx, barY, isAdoptive);
     });
-    const busX = parentsBoxes.map((b) => b.cx).concat(selfPeopleBoxes.map((b) => b.cx));
-    const left = Math.min(...busX), right = Math.max(...busX);
+    // 父母(実親・養親含む)をいったん横線で結び、そこから1本の線だけを子の世代へ落とす(父と母それぞれから別々に2本伸びて見えるのを防ぐ)
+    svg.appendChild(svgEl('line', { x1: parentLeft, y1: barY, x2: parentRight, y2: barY, stroke: LINE, 'stroke-width': 2 }));
+    svg.appendChild(svgEl('line', { x1: parentCenterX, y1: barY, x2: parentCenterX, y2: busY, stroke: LINE, 'stroke-width': 2 }));
+    const selfXs = selfPeopleBoxes.map((b) => b.cx);
+    const left = Math.min(parentCenterX, ...selfXs), right = Math.max(parentCenterX, ...selfXs);
     svg.appendChild(svgEl('line', { x1: left, y1: busY, x2: right, y2: busY, stroke: LINE, 'stroke-width': 2 }));
     selfPeopleBoxes.forEach((b) => svg.appendChild(svgEl('line', { x1: b.cx, y1: busY, x2: b.cx, y2: rowY.mid, stroke: LINE, 'stroke-width': 2 })));
   }
