@@ -996,19 +996,42 @@ function renderFamilyTree() {
   const p = personById(familyTreeFocusId);
   if (!p) { goBack(); return; }
 
-  const father = p.fatherId != null ? personById(p.fatherId) : null;
-  const mother = p.motherId != null ? personById(p.motherId) : null;
+  // 親は実親が未登録なら養親で代用して表示する(養子側から見た時に親が出ないのを防ぐ)
+  const fatherId = p.fatherId ?? p.adoptiveFatherId ?? null;
+  const motherId = p.motherId ?? p.adoptiveMotherId ?? null;
+  const isAdoptiveFather = p.fatherId == null && p.adoptiveFatherId != null;
+  const isAdoptiveMother = p.motherId == null && p.adoptiveMotherId != null;
+  const father = fatherId != null ? personById(fatherId) : null;
+  const mother = motherId != null ? personById(motherId) : null;
+  const parentEntries = [
+    father ? { person: father, label: isAdoptiveFather ? '養父' : '父' } : null,
+    mother ? { person: mother, label: isAdoptiveMother ? '養母' : '母' } : null,
+  ].filter(Boolean);
+
+  // 兄弟姉妹は実親・養親のどちらか一致でも検出する
+  const effFatherId = (x) => x.fatherId ?? x.adoptiveFatherId ?? null;
+  const effMotherId = (x) => x.motherId ?? x.adoptiveMotherId ?? null;
+  const pEffFatherId = effFatherId(p), pEffMotherId = effMotherId(p);
   const siblings = people.filter((c) => c.id !== p.id
-    && ((p.fatherId != null && c.fatherId === p.fatherId) || (p.motherId != null && c.motherId === p.motherId)));
-  const selfRowPeople = siblings.concat([p]).sort((a, b) => (a.birthYear ?? 1e9) - (b.birthYear ?? 1e9));
+    && ((pEffFatherId != null && effFatherId(c) === pEffFatherId) || (pEffMotherId != null && effMotherId(c) === pEffMotherId)))
+    .sort((a, b) => (a.birthYear ?? 1e9) - (b.birthYear ?? 1e9));
+  // 本人は必ず兄弟姉妹の並びの最後に置く(配偶者ボックスを隣接させて線のズレを防ぐため)
+  const selfRowPeople = [...siblings, p];
   const spouses = (p.spouseIds || []).map((sid) => personById(sid)).filter(Boolean);
   const bioChildren = people.filter((c) => c.fatherId === p.id || c.motherId === p.id);
   const adoptedChildren = people.filter((c) => c.adoptiveFatherId === p.id || c.adoptiveMotherId === p.id);
   const childrenRowPeople = bioChildren.concat(adoptedChildren);
 
   const rowY = { parents: 36, mid: 190, children: 344 };
-  const parentsPos = treeRowLayout([father, mother].filter(Boolean), rowY.parents);
-  const midPos = treeRowLayout(selfRowPeople.concat(spouses), rowY.mid);
+  const parentsPos = treeRowLayout(parentEntries.map((e) => e.person), rowY.parents);
+  // 本人・兄弟姉妹だけで中央寄せし、配偶者はその後ろに追加する(全体を一緒に中央寄せすると親からの縦線とズレるため)
+  const selfRowPos = treeRowLayout(selfRowPeople, rowY.mid);
+  const selfPos = selfRowPos[selfRowPos.length - 1];
+  const spousePos = spouses.map((sp, i) => {
+    const x = selfPos.x + (i + 1) * (TREE_BOX_W + TREE_GAP);
+    return { person: sp, x, y: rowY.mid, cx: x + TREE_BOX_W / 2, cy: rowY.mid + TREE_BOX_H / 2 };
+  });
+  const midPos = selfRowPos.concat(spousePos);
   const childrenPos = treeRowLayout(childrenRowPeople, rowY.children);
 
   const allX = [...parentsPos, ...midPos, ...childrenPos].map((b) => b.x);
@@ -1077,7 +1100,7 @@ function renderFamilyTree() {
     svg.appendChild(g);
   };
 
-  parentsBoxes.forEach((b, i) => drawBox(b, false, i === 0 ? '父' : '母'));
+  parentsBoxes.forEach((b, i) => drawBox(b, false, parentEntries[i].label));
   midBoxes.forEach((b, i) => {
     if (i < selfRowPeople.length) drawBox(b, b.person.id === p.id, b.person.id === p.id ? '' : '兄弟姉妹');
     else drawBox(b, false, '配偶者');
