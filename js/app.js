@@ -347,6 +347,7 @@ async function addChildRelation(selectId, kind) {
     if (asFather) child.adoptiveFatherId = editingPersonId; else child.adoptiveMotherId = editingPersonId;
   }
   await DB.updatePerson(child);
+  if (kind === 'bio') await autoLinkParentsAsSpouses(child.fatherId, child.motherId);
   await refreshAll();
   renderChildrenSection();
   renderPersonNameDatalist();
@@ -1080,9 +1081,26 @@ async function savePersonForm() {
     currentPersonId = personId;
   }
   await syncSpouseLinks(personId, oldSpouseIds, spouseIds);
+  await autoLinkParentsAsSpouses(fatherId, motherId);
   await syncSummaryRows(personId);
   await refreshAll();
   goBack();
+}
+
+// 子の父・母が両方わかった時点で、その2人を自動的に配偶者として結びつける(明示的な配偶者登録を省略できるようにする)
+async function autoLinkParentsAsSpouses(fatherId, motherId) {
+  if (fatherId == null || motherId == null) return;
+  const father = people.find((p) => p.id === fatherId);
+  const mother = people.find((p) => p.id === motherId);
+  if (!father || !mother) return;
+  if (!(father.spouseIds || []).includes(motherId)) {
+    father.spouseIds = [...(father.spouseIds || []), motherId];
+    await DB.updatePerson(father);
+  }
+  if (!(mother.spouseIds || []).includes(fatherId)) {
+    mother.spouseIds = [...(mother.spouseIds || []), fatherId];
+    await DB.updatePerson(mother);
+  }
 }
 
 // 配偶者は双方向に持たせる。片方で追加/削除したら、もう片方のspouseIdsにも自動反映する
@@ -1424,10 +1442,14 @@ async function treeAddPerson(relation) {
     const newId = await DB.addPerson(base);
     focus.fatherId = newId;
     await DB.updatePerson(focus);
+    await refreshAll();
+    await autoLinkParentsAsSpouses(newId, focus.motherId);
   } else if (relation === 'mother') {
     const newId = await DB.addPerson(base);
     focus.motherId = newId;
     await DB.updatePerson(focus);
+    await refreshAll();
+    await autoLinkParentsAsSpouses(focus.fatherId, newId);
   } else if (relation === 'adoptiveFather') {
     const newId = await DB.addPerson(base);
     focus.adoptiveFatherId = newId;
