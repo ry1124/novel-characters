@@ -52,6 +52,7 @@
       <div class="detail-sub" id="person-kana"></div>
       <div class="detail-sub" id="person-youmei"></div>
       <div class="detail-sub" id="person-maiden-name"></div>
+      <div class="detail-sub" id="person-genpuku"></div>
       <div class="detail-sub" id="person-roles"></div>
       <div class="detail-sub" id="person-years"></div>
     </div>
@@ -166,6 +167,19 @@
       <div class="form-row"><label>読み(かな・検索用、任意)</label><input id="person-form-kana" type="text" placeholder="例: やまだたろう"></div>
       <div class="form-row"><label>幼名(任意)</label><input id="person-form-youmei" type="text" placeholder="例: 竹千代"></div>
       <div class="form-row"><label>旧姓(任意)</label><input id="person-form-maiden-name" type="text" placeholder="例: 鈴木"></div>
+      <div class="form-row">
+        <label>元服(任意)</label>
+        <div class="event-time-row">
+          <input id="person-form-genpuku-year" type="number" min="0" max="3000" placeholder="年">
+          <select id="person-form-genpuku-month">
+            <option value="">月-</option>
+            <option value="1">1月</option><option value="2">2月</option><option value="3">3月</option>
+            <option value="4">4月</option><option value="5">5月</option><option value="6">6月</option>
+            <option value="7">7月</option><option value="8">8月</option><option value="9">9月</option>
+            <option value="10">10月</option><option value="11">11月</option><option value="12">12月</option>
+          </select>
+        </div>
+      </div>
       <div class="form-row"><label>生年(0〜3000)</label><input id="person-form-birth" type="number" min="0" max="3000" placeholder="例: 480"></div>
       <div class="form-row"><label>没年(0〜3000、存命・不明なら空欄)</label><input id="person-form-death" type="number" min="0" max="3000" placeholder="例: 540"></div>
       <div class="section-label" style="padding-left:0;">役職(複数・期間あり可)</div>

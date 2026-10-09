@@ -177,6 +177,8 @@ function openPersonForm(id) {
   const kanaEl = document.getElementById('person-form-kana');
   const youmeiEl = document.getElementById('person-form-youmei');
   const maidenNameEl = document.getElementById('person-form-maiden-name');
+  const genpukuYearEl = document.getElementById('person-form-genpuku-year');
+  const genpukuMonthEl = document.getElementById('person-form-genpuku-month');
   const birthEl = document.getElementById('person-form-birth');
   const deathEl = document.getElementById('person-form-death');
   const fatherEl = document.getElementById('person-form-father');
@@ -187,6 +189,8 @@ function openPersonForm(id) {
     kanaEl.value = p.kana || '';
     youmeiEl.value = p.youmei || '';
     maidenNameEl.value = p.maidenName || '';
+    genpukuYearEl.value = p.genpukuYear ?? '';
+    genpukuMonthEl.value = p.genpukuMonth ?? '';
     birthEl.value = p.birthYear ?? '';
     deathEl.value = p.deathYear ?? '';
     summaryDraftRows = loadSummaryRowsForPerson(id);
@@ -195,7 +199,8 @@ function openPersonForm(id) {
     motherEl.innerHTML = personSelectOptions(id, p.motherId);
     spouseDraftIds = (p.spouseIds || []).slice();
   } else {
-    nameEl.value = ''; kanaEl.value = ''; youmeiEl.value = ''; maidenNameEl.value = ''; birthEl.value = ''; deathEl.value = '';
+    nameEl.value = ''; kanaEl.value = ''; youmeiEl.value = ''; maidenNameEl.value = '';
+    genpukuYearEl.value = ''; genpukuMonthEl.value = ''; birthEl.value = ''; deathEl.value = '';
     summaryDraftRows = [];
     roleDraftRows = [];
     fatherEl.innerHTML = personSelectOptions(null, null);
@@ -294,6 +299,7 @@ function renderPersonDetail() {
   document.getElementById('person-kana').textContent = p.kana || '';
   document.getElementById('person-youmei').textContent = p.youmei ? `幼名: ${p.youmei}` : '';
   document.getElementById('person-maiden-name').textContent = p.maidenName ? `旧姓: ${p.maidenName}` : '';
+  document.getElementById('person-genpuku').textContent = p.genpukuYear != null ? `元服: ${formatYearMonth(p.genpukuYear, p.genpukuMonth)}` : '';
   document.getElementById('person-roles').textContent = (p.roles || []).map((r) => `${r.role}(${formatRolePeriod(r)})`).join('、');
   document.getElementById('person-years').textContent = formatPersonYears(p);
 
@@ -575,6 +581,10 @@ async function savePersonForm() {
   const kana = document.getElementById('person-form-kana').value.trim();
   const youmei = document.getElementById('person-form-youmei').value.trim();
   const maidenName = document.getElementById('person-form-maiden-name').value.trim();
+  const genpukuYearVal = document.getElementById('person-form-genpuku-year').value;
+  const genpukuMonthVal = document.getElementById('person-form-genpuku-month').value;
+  const genpukuYear = genpukuYearVal ? clampYear(genpukuYearVal) : null;
+  const genpukuMonth = genpukuMonthVal ? Number(genpukuMonthVal) : null;
   const birthVal = document.getElementById('person-form-birth').value;
   const deathVal = document.getElementById('person-form-death').value;
   const birthYear = birthVal ? clampYear(birthVal) : null;
@@ -597,11 +607,12 @@ async function savePersonForm() {
   if (editingPersonId) {
     const p = personById(editingPersonId);
     oldSpouseIds = p.spouseIds || [];
-    p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.roles = roles; p.birthYear = birthYear; p.deathYear = deathYear;
+    p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
+    p.roles = roles; p.birthYear = birthYear; p.deathYear = deathYear;
     p.fatherId = fatherId; p.motherId = motherId; p.spouseIds = spouseIds;
     await DB.updatePerson(p);
   } else {
-    personId = await DB.addPerson({ name, kana, youmei, maidenName, roles, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now() });
+    personId = await DB.addPerson({ name, kana, youmei, maidenName, genpukuYear, genpukuMonth, roles, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now() });
     currentPersonId = personId;
   }
   await syncSpouseLinks(personId, oldSpouseIds, spouseIds);
