@@ -27,6 +27,9 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* iOS Safariはbuttonにネイティブの見た目(appearance)を与え、背景色は効いても文字色が無視されて
+   見えなくなることがあるため、全ボタンで必ずCSS側の指定だけが効くようにする */
+button { appearance: none; -webkit-appearance: none; font-family: inherit; }
 
 html, body {
   height: 100%;
@@ -78,7 +81,10 @@ html, body {
 .icon-btn.back { font-size: 17px; padding-left: 0; }
 
 .filter-chips { display: flex; gap: 8px; overflow-x: auto; padding: 4px 16px 8px; -webkit-overflow-scrolling: touch; }
-.filter-chip { flex-shrink: 0; padding: 6px 14px; border-radius: 16px; background: var(--surface2); color: var(--text-dim); font-size: 13px; white-space: nowrap; border: none; cursor: pointer; }
+.filter-chip {
+  flex-shrink: 0; padding: 6px 14px; border-radius: 16px; background: var(--surface2); color: var(--text-dim);
+  font-size: 13px; line-height: 1.4; white-space: nowrap; border: none; cursor: pointer;
+}
 .filter-chip.active { background: var(--accent); color: #fff; }
 
 .search-bar { padding: 8px 16px; }
