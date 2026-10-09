@@ -16,6 +16,10 @@ let mapDraftParticipants = [];
 let selectedMapTool = null;
 let mapDragging = null;
 
+let memoDetectedPersonIds = new Set();
+let spouseDraftIds = [];
+let familyTreeFocusId = null;
+
 const STATUS_LIST = ['生存', '死亡', '負傷', '不明'];
 const STATUS_CLASS = { 生存: 'alive', 死亡: 'dead', 負傷: 'injured', 不明: 'unknown' };
 
@@ -140,6 +144,33 @@ function renderRoleList() {
     </li>`).join('');
 }
 
+// ===== 人物フォーム: 配偶者(複数)編集 =====
+function renderSpouseList() {
+  const listEl = document.getElementById('person-spouse-list');
+  listEl.innerHTML = spouseDraftIds.map((pid) => {
+    const p = personById(pid);
+    return `<li class="list-item" data-pid="${pid}">
+      <div class="list-item-main"><div class="list-item-title">${escapeHtml(p ? p.name : '?')}</div></div>
+      <button type="button" class="remove-btn" data-remove-spouse="${pid}">×</button>
+    </li>`;
+  }).join('');
+  renderSpouseAddSelect();
+}
+
+function renderSpouseAddSelect() {
+  const sel = document.getElementById('person-spouse-add');
+  const candidates = people.filter((p) => p.id !== editingPersonId && !spouseDraftIds.includes(p.id));
+  sel.innerHTML = candidates.length
+    ? candidates.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')
+    : '<option value="">(追加できる人物がいません)</option>';
+}
+
+function personSelectOptions(excludeId, selectedId) {
+  const opts = people.filter((p) => p.id !== excludeId)
+    .map((p) => `<option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
+  return '<option value="">未設定</option>' + opts;
+}
+
 function openPersonForm(id) {
   editingPersonId = id;
   const nameEl = document.getElementById('person-form-name');
@@ -147,6 +178,8 @@ function openPersonForm(id) {
   const youmeiEl = document.getElementById('person-form-youmei');
   const birthEl = document.getElementById('person-form-birth');
   const deathEl = document.getElementById('person-form-death');
+  const fatherEl = document.getElementById('person-form-father');
+  const motherEl = document.getElementById('person-form-mother');
   if (id) {
     const p = personById(id);
     nameEl.value = p.name || '';
@@ -156,10 +189,16 @@ function openPersonForm(id) {
     deathEl.value = p.deathYear ?? '';
     summaryDraftRows = loadSummaryRowsForPerson(id);
     roleDraftRows = (p.roles || []).map((r) => ({ rowId: nextRoleRowId(), role: r.role, startYear: r.startYear, endYear: r.endYear }));
+    fatherEl.innerHTML = personSelectOptions(id, p.fatherId);
+    motherEl.innerHTML = personSelectOptions(id, p.motherId);
+    spouseDraftIds = (p.spouseIds || []).slice();
   } else {
     nameEl.value = ''; kanaEl.value = ''; youmeiEl.value = ''; birthEl.value = ''; deathEl.value = '';
     summaryDraftRows = [];
     roleDraftRows = [];
+    fatherEl.innerHTML = personSelectOptions(null, null);
+    motherEl.innerHTML = personSelectOptions(null, null);
+    spouseDraftIds = [];
   }
   summaryOriginalEventIds = summaryDraftRows.map((r) => r.eventId);
   document.getElementById('person-summary-add-year').value = '';
@@ -170,6 +209,7 @@ function openPersonForm(id) {
   document.getElementById('person-role-add-name').value = '';
   renderSummaryList();
   renderRoleList();
+  renderSpouseList();
   navigateTo('view-edit-person');
 }
 
@@ -542,18 +582,49 @@ async function savePersonForm() {
       startYear: r.startYear != null && r.startYear !== '' ? clampYear(r.startYear) : null,
       endYear: r.endYear != null && r.endYear !== '' ? clampYear(r.endYear) : null,
     }));
+  const fatherVal = document.getElementById('person-form-father').value;
+  const motherVal = document.getElementById('person-form-mother').value;
+  const fatherId = fatherVal ? Number(fatherVal) : null;
+  const motherId = motherVal ? Number(motherVal) : null;
+  const spouseIds = spouseDraftIds.slice();
   let personId = editingPersonId;
+  let oldSpouseIds = [];
   if (editingPersonId) {
     const p = personById(editingPersonId);
+    oldSpouseIds = p.spouseIds || [];
     p.name = name; p.kana = kana; p.youmei = youmei; p.roles = roles; p.birthYear = birthYear; p.deathYear = deathYear;
+    p.fatherId = fatherId; p.motherId = motherId; p.spouseIds = spouseIds;
     await DB.updatePerson(p);
   } else {
-    personId = await DB.addPerson({ name, kana, youmei, roles, birthYear, deathYear, createdAt: Date.now() });
+    personId = await DB.addPerson({ name, kana, youmei, roles, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now() });
     currentPersonId = personId;
   }
+  await syncSpouseLinks(personId, oldSpouseIds, spouseIds);
   await syncSummaryRows(personId);
   await refreshAll();
   goBack();
+}
+
+// 配偶者は双方向に持たせる。片方で追加/削除したら、もう片方のspouseIdsにも自動反映する
+async function syncSpouseLinks(personId, oldIds, newIds) {
+  const oldSet = new Set(oldIds || []);
+  const newSet = new Set(newIds || []);
+  for (const sid of newSet) {
+    if (oldSet.has(sid)) continue;
+    const sp = people.find((p) => p.id === sid);
+    if (sp && !(sp.spouseIds || []).includes(personId)) {
+      sp.spouseIds = [...(sp.spouseIds || []), personId];
+      await DB.updatePerson(sp);
+    }
+  }
+  for (const sid of oldSet) {
+    if (newSet.has(sid)) continue;
+    const sp = people.find((p) => p.id === sid);
+    if (sp) {
+      sp.spouseIds = (sp.spouseIds || []).filter((x) => x !== personId);
+      await DB.updatePerson(sp);
+    }
+  }
 }
 
 async function deletePerson(id) {
@@ -561,6 +632,14 @@ async function deletePerson(id) {
     ev.participants = ev.participants.filter((p) => p.personId !== id);
     if (ev.participants.length === 0) await DB.deleteEvent(ev.id); // 参加者がいなくなる出来事(概要由来など)は残さない
     else await DB.updateEvent(ev);
+  }
+  // 他の人物の父・母・配偶者としての参照も外す
+  for (const other of people) {
+    let changed = false;
+    if (other.fatherId === id) { other.fatherId = null; changed = true; }
+    if (other.motherId === id) { other.motherId = null; changed = true; }
+    if ((other.spouseIds || []).includes(id)) { other.spouseIds = other.spouseIds.filter((x) => x !== id); changed = true; }
+    if (changed) await DB.updatePerson(other);
   }
   await DB.deletePerson(id);
   await refreshAll();
@@ -604,6 +683,100 @@ async function deleteEvent(id) {
 }
 
 // ===== イベント配線 =====
+// ===== メモから出来事を作成 =====
+function openMemoImport() {
+  document.getElementById('memo-text').value = '';
+  memoDetectedPersonIds = new Set();
+  renderMemoDetectedList();
+}
+
+function detectPeopleInMemo() {
+  const text = document.getElementById('memo-text').value;
+  memoDetectedPersonIds = new Set(
+    people.filter((p) => [p.name, p.kana, p.youmei].filter(Boolean).some((n) => text.includes(n))).map((p) => p.id)
+  );
+  renderMemoDetectedList();
+}
+
+function renderMemoDetectedList() {
+  const listEl = document.getElementById('memo-detected-list');
+  const emptyEl = document.getElementById('memo-detected-empty');
+  if (memoDetectedPersonIds.size === 0) {
+    listEl.innerHTML = '';
+    emptyEl.textContent = '人物が見つかりませんでした(下の「手動で追加」からも追加できます)';
+  } else {
+    emptyEl.textContent = '';
+    listEl.innerHTML = Array.from(memoDetectedPersonIds).map((pid) => {
+      const p = personById(pid);
+      return `<li class="list-item" data-pid="${pid}">
+        <div class="list-item-main"><div class="list-item-title">${escapeHtml(p ? p.name : '?')}</div></div>
+        <button type="button" class="remove-btn" data-remove-memo="${pid}">×</button>
+      </li>`;
+    }).join('');
+  }
+  renderMemoAddPersonSelect();
+}
+
+function renderMemoAddPersonSelect() {
+  const sel = document.getElementById('memo-add-person');
+  const candidates = people.filter((p) => !memoDetectedPersonIds.has(p.id));
+  sel.innerHTML = candidates.length
+    ? candidates.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')
+    : '<option value="">(追加できる人物がいません)</option>';
+}
+
+function createEventFromMemo() {
+  const memo = document.getElementById('memo-text').value.trim();
+  editingEventId = null;
+  document.getElementById('event-form-title').value = '';
+  document.getElementById('event-form-year').value = '';
+  document.getElementById('event-form-month').value = '';
+  document.getElementById('event-form-end-year').value = '';
+  document.getElementById('event-form-end-month').value = '';
+  document.getElementById('event-form-description').value = memo;
+  draftParticipants = Array.from(memoDetectedPersonIds).map((pid) => ({ personId: pid, status: '生存', note: '', position: null }));
+  renderEventFormParticipants();
+  renderAddPersonSelect();
+  navigateTo('view-edit-event');
+}
+
+// ===== 家系図 =====
+function treeBoxHtml(person, extraClass, subText) {
+  if (!person) return '';
+  return `<button type="button" class="tree-box ${extraClass || ''}" data-tree-person="${person.id}">
+    ${escapeHtml(person.name)}
+    ${subText ? `<div class="tree-box-sub">${escapeHtml(subText)}</div>` : ''}
+  </button>`;
+}
+
+function openFamilyTree(id) {
+  familyTreeFocusId = id;
+  renderFamilyTree();
+}
+
+function renderFamilyTree() {
+  const p = personById(familyTreeFocusId);
+  if (!p) { goBack(); return; }
+
+  const father = p.fatherId != null ? personById(p.fatherId) : null;
+  const mother = p.motherId != null ? personById(p.motherId) : null;
+  const parentsEl = document.getElementById('tree-parents');
+  parentsEl.innerHTML = (father || mother)
+    ? treeBoxHtml(father, '', '父') + treeBoxHtml(mother, '', '母')
+    : '<div class="tree-empty">未設定</div>';
+
+  const spouses = (p.spouseIds || []).map((sid) => personById(sid)).filter(Boolean);
+  const selfEl = document.getElementById('tree-self');
+  selfEl.innerHTML = treeBoxHtml(p, 'self', formatPersonYears(p))
+    + spouses.map((sp) => treeBoxHtml(sp, '', '配偶者')).join('');
+
+  const children = people.filter((c) => c.fatherId === p.id || c.motherId === p.id);
+  const childrenEl = document.getElementById('tree-children');
+  childrenEl.innerHTML = children.length
+    ? children.map((c) => treeBoxHtml(c, '', formatPersonYears(c))).join('')
+    : '<div class="tree-empty">未登録</div>';
+}
+
 const RENDER_FNS = {
   'view-search': renderSearch,
   'view-people': renderPeople,
@@ -611,6 +784,8 @@ const RENDER_FNS = {
   'view-events': renderEvents,
   'view-event-detail': renderEventDetail,
   'view-event-map-editor': openMapEditor,
+  'view-memo-import': openMemoImport,
+  'view-family-tree': renderFamilyTree,
 };
 
 function wireNav() {
@@ -657,6 +832,14 @@ function wireDetailActions() {
   document.getElementById('event-edit-btn').addEventListener('click', () => openEventForm(currentEventId));
   document.getElementById('event-delete-btn').addEventListener('click', () => askConfirm(() => deleteEvent(currentEventId)));
   document.getElementById('event-map-btn').addEventListener('click', () => { mapEditingEventId = currentEventId; navigateTo('view-event-map-editor'); });
+  document.getElementById('person-tree-btn').addEventListener('click', () => { familyTreeFocusId = currentPersonId; navigateTo('view-family-tree'); });
+  document.getElementById('tree-edit-btn').addEventListener('click', () => openPersonForm(familyTreeFocusId));
+  document.getElementById('view-family-tree').addEventListener('click', (e) => {
+    const box = e.target.closest('[data-tree-person]');
+    if (!box) return;
+    familyTreeFocusId = Number(box.dataset.treePerson);
+    renderFamilyTree();
+  });
 
   document.getElementById('confirm-sheet-ok').addEventListener('click', () => { const fn = pendingConfirm; hideConfirm(); if (fn) fn(); });
   document.getElementById('confirm-sheet-cancel').addEventListener('click', hideConfirm);
@@ -780,6 +963,36 @@ function wireForms() {
     roleDraftRows = roleDraftRows.filter((r) => r.rowId !== btn.dataset.removeRole);
     renderRoleList();
   });
+
+  document.getElementById('person-spouse-add-btn').addEventListener('click', () => {
+    const sel = document.getElementById('person-spouse-add');
+    const pid = Number(sel.value);
+    if (!pid || spouseDraftIds.includes(pid)) return;
+    spouseDraftIds.push(pid);
+    renderSpouseList();
+  });
+  document.getElementById('person-spouse-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-spouse]');
+    if (!btn) return;
+    spouseDraftIds = spouseDraftIds.filter((id) => id !== Number(btn.dataset.removeSpouse));
+    renderSpouseList();
+  });
+
+  document.getElementById('memo-detect-btn').addEventListener('click', detectPeopleInMemo);
+  document.getElementById('memo-add-person-btn').addEventListener('click', () => {
+    const sel = document.getElementById('memo-add-person');
+    const pid = Number(sel.value);
+    if (!pid) return;
+    memoDetectedPersonIds.add(pid);
+    renderMemoDetectedList();
+  });
+  document.getElementById('memo-detected-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-memo]');
+    if (!btn) return;
+    memoDetectedPersonIds.delete(Number(btn.dataset.removeMemo));
+    renderMemoDetectedList();
+  });
+  document.getElementById('memo-create-event-btn').addEventListener('click', createEventFromMemo);
 }
 
 function wireBackup() {

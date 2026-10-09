@@ -55,6 +55,7 @@
       <div class="detail-sub" id="person-years"></div>
     </div>
     <div id="person-death-banner" class="death-banner hidden"></div>
+    <div class="detail-actions"><button class="btn-secondary" id="person-tree-btn">家系図を見る</button></div>
     <div class="section-label">経歴年表</div>
     <ul id="person-timeline" class="timeline"></ul>
     <div id="person-timeline-empty" class="empty-state">この人物が参加した出来事はまだありません</div>
@@ -64,7 +65,10 @@
   <section id="view-events" class="view">
     <div class="topbar">
       <h1>出来事</h1>
-      <div class="topbar-actions"><button class="icon-btn" data-nav="view-edit-event" data-new="event">+ 追加</button></div>
+      <div class="topbar-actions">
+        <button class="icon-btn" data-nav="view-memo-import">メモから作成</button>
+        <button class="icon-btn" data-nav="view-edit-event" data-new="event">+ 追加</button>
+      </div>
     </div>
     <div class="search-bar"><input id="events-search-input" type="text" placeholder="出来事名・説明で検索"></div>
     <ul id="events-list" class="list"></ul>
@@ -104,6 +108,52 @@
     <div class="map-canvas-wrap"><svg id="map-svg" class="map-canvas" viewBox="0 0 400 300"></svg></div>
   </section>
 
+  <!-- ===== メモから出来事を作成 ===== -->
+  <section id="view-memo-import" class="view">
+    <div class="topbar">
+      <button class="icon-btn back" data-back>‹ 戻る</button>
+      <h1 style="font-size:20px;">メモから作成</h1>
+      <div style="width:40px;"></div>
+    </div>
+    <div class="form-body">
+      <div class="form-row">
+        <label>メモ(小説の一文章・プロット片など)</label>
+        <textarea id="memo-text" placeholder="ここに文章を貼り付けてください" style="min-height:140px;"></textarea>
+      </div>
+      <button class="btn-primary" id="memo-detect-btn" type="button">人物を検出する</button>
+      <div class="section-label" style="padding-left:0;">検出された人物</div>
+      <ul id="memo-detected-list" class="list" style="padding:0;"></ul>
+      <div id="memo-detected-empty" class="form-note">「人物を検出する」を押すと、メモ内の登録済み人物を探します</div>
+      <div class="form-row">
+        <label>手動で追加</label>
+        <select id="memo-add-person"></select>
+      </div>
+      <button class="btn-secondary" id="memo-add-person-btn" type="button">+ この人物も加える</button>
+      <button class="btn-primary" id="memo-create-event-btn" type="button">この内容で出来事を作る</button>
+    </div>
+  </section>
+
+  <!-- ===== 家系図 ===== -->
+  <section id="view-family-tree" class="view">
+    <div class="topbar">
+      <button class="icon-btn back" data-back>‹ 戻る</button>
+      <h1 style="font-size:20px;">家系図</h1>
+      <div class="topbar-actions"><button class="icon-btn" id="tree-edit-btn">編集</button></div>
+    </div>
+    <div class="tree-section">
+      <div class="section-label" style="padding-left:0;">両親</div>
+      <div class="tree-row" id="tree-parents"></div>
+    </div>
+    <div class="tree-section">
+      <div class="section-label" style="padding-left:0;">本人・配偶者</div>
+      <div class="tree-row" id="tree-self"></div>
+    </div>
+    <div class="tree-section">
+      <div class="section-label" style="padding-left:0;">子</div>
+      <div class="tree-row" id="tree-children"></div>
+    </div>
+  </section>
+
   <!-- ===== 人物 編集 ===== -->
   <section id="view-edit-person" class="view">
     <div class="topbar">
@@ -128,6 +178,16 @@
         </div>
       </div>
       <button class="btn-secondary" id="person-role-add-btn" type="button">+ 役職を追加</button>
+      <div class="section-label" style="padding-left:0;">家族(任意)</div>
+      <div class="form-row"><label>父</label><select id="person-form-father"></select></div>
+      <div class="form-row"><label>母</label><select id="person-form-mother"></select></div>
+      <div class="form-note">子は、子となる人物側で「父」「母」にこの人物を指定すると自動的に反映されます</div>
+      <ul id="person-spouse-list" class="list" style="padding:0;"></ul>
+      <div class="form-row">
+        <label>配偶者を追加</label>
+        <select id="person-spouse-add"></select>
+      </div>
+      <button class="btn-secondary" id="person-spouse-add-btn" type="button">+ 配偶者に追加</button>
       <div class="section-label" style="padding-left:0;">概要(年表)</div>
       <div class="form-note">年月と詳細を入力すると、この人物の「出来事」として自動的に登録されます</div>
       <ul id="person-summary-list" class="list" style="padding:0;"></ul>
