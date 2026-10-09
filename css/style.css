@@ -105,6 +105,8 @@ html, body {
   border-bottom: 1px solid var(--border);
   cursor: pointer;
 }
+.list-item.list-item-indent { padding-left: 20px; }
+.list-item.list-item-indent .list-item-title { font-weight: 500; font-size: 15px; color: var(--text-dim); }
 .list-item-main { flex: 1; min-width: 0; }
 .list-item-title { font-size: 16px; font-weight: 600; }
 .list-item-sub { font-size: 13px; color: var(--text-dim); margin-top: 2px; }

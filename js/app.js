@@ -8,6 +8,7 @@ let currentPersonId = null;
 let currentEventId = null;
 let editingPersonId = null;
 let editingEventId = null;
+let eventFormParentId = null; // 新規作成する出来事を、どの出来事の子出来事として作るか(null=トップレベル)
 let draftParticipants = [];
 
 let mapEditingEventId = null;
@@ -306,7 +307,7 @@ function openPersonForm(id) {
   navigateTo('view-edit-person');
 }
 
-function openEventForm(id) {
+function openEventForm(id, parentId) {
   editingEventId = id;
   const titleEl = document.getElementById('event-form-title');
   const yearEl = document.getElementById('event-form-year');
@@ -323,11 +324,16 @@ function openEventForm(id) {
     endMonthEl.value = ev.endMonth ?? '';
     descEl.value = ev.description || '';
     draftParticipants = (ev.participants || []).map((p) => ({ ...p }));
+    eventFormParentId = ev.parentEventId ?? null;
   } else {
     titleEl.value = ''; yearEl.value = ''; monthEl.value = '';
     endYearEl.value = ''; endMonthEl.value = ''; descEl.value = '';
     draftParticipants = [];
+    eventFormParentId = parentId ?? null;
   }
+  const parentNoteEl = document.getElementById('event-form-parent-note');
+  const parentEvent = eventFormParentId != null ? eventById(eventFormParentId) : null;
+  parentNoteEl.textContent = parentEvent ? `「${parentEvent.title}」の子出来事として登録されます` : '';
   renderEventFormParticipants();
   renderAddPersonSelect();
   navigateTo('view-edit-event');
@@ -429,24 +435,36 @@ function renderPersonDetail() {
 }
 
 // ===== 出来事一覧 =====
+function eventMatchesQuery(ev, q) {
+  return (ev.title || '').toLowerCase().includes(q) || (ev.description || '').toLowerCase().includes(q);
+}
+
+function eventListItemHtml(ev, indent) {
+  return `<li class="list-item ${indent ? 'list-item-indent' : ''}" data-event-id="${ev.id}">
+    <div class="list-item-main">
+      <div class="list-item-title">${indent ? '↳ ' : ''}${escapeHtml(ev.title)}</div>
+      <div class="list-item-sub">${formatEventTime(ev)} ・ 参加者${(ev.participants || []).length}人</div>
+    </div>
+    <span class="list-item-chevron">›</span>
+  </li>`;
+}
+
 function renderEvents() {
   const listEl = document.getElementById('events-list');
   const emptyEl = document.getElementById('events-empty');
   if (!events.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); emptyEl.textContent = 'まだ出来事が登録されていません'; return; }
   const q = (document.getElementById('events-search-input').value || '').trim().toLowerCase();
+  const topEvents = events.filter((ev) => ev.parentEventId == null);
+  const childrenOf = (id) => events.filter((ev) => ev.parentEventId === id).sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
   const filtered = q
-    ? events.filter((ev) => (ev.title || '').toLowerCase().includes(q) || (ev.description || '').toLowerCase().includes(q))
-    : events;
+    ? topEvents.filter((top) => eventMatchesQuery(top, q) || childrenOf(top.id).some((c) => eventMatchesQuery(c, q)))
+    : topEvents;
   if (!filtered.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); emptyEl.textContent = '該当する出来事が見つかりません'; return; }
   emptyEl.classList.add('hidden');
   const sorted = filtered.slice().sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
-  listEl.innerHTML = sorted.map((ev) => `<li class="list-item" data-event-id="${ev.id}">
-    <div class="list-item-main">
-      <div class="list-item-title">${escapeHtml(ev.title)}</div>
-      <div class="list-item-sub">${formatEventTime(ev)} ・ 参加者${(ev.participants || []).length}人</div>
-    </div>
-    <span class="list-item-chevron">›</span>
-  </li>`).join('');
+  listEl.innerHTML = sorted.map((ev) =>
+    eventListItemHtml(ev, false) + childrenOf(ev.id).map((c) => eventListItemHtml(c, true)).join('')
+  ).join('');
 }
 
 // ===== 出来事詳細 =====
@@ -484,6 +502,15 @@ function renderEventDetail() {
   } else {
     wrap.style.display = 'none';
   }
+
+  const children = events.filter((c) => c.parentEventId === ev.id).sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
+  document.getElementById('event-children-list').innerHTML = children.map((c) => `<li class="list-item" data-event-id="${c.id}">
+      <div class="list-item-main">
+        <div class="list-item-title">${escapeHtml(c.title)}</div>
+        <div class="list-item-sub">${formatEventTime(c)} ・ 参加者${(c.participants || []).length}人</div>
+      </div>
+      <span class="list-item-chevron">›</span>
+    </li>`).join('');
 }
 
 // ===== 出来事フォーム: 参加者編集 =====
@@ -666,6 +693,7 @@ async function syncSummaryRows(personId) {
     const newId = await DB.addEvent({
       title: detail, year, month, endYear: null, endMonth: null, description: '',
       terrainMap: null, participants: [{ personId, status: '生存', note: '', position: null, killedPersonId: null }],
+      parentEventId: null,
     });
     keepEventIds.add(newId);
   }
@@ -792,7 +820,7 @@ async function saveEventForm() {
     await DB.updateEvent(ev);
     currentEventId = ev.id;
   } else {
-    const id = await DB.addEvent({ title, year, month, endYear, endMonth, description, terrainMap: null, participants: draftParticipants });
+    const id = await DB.addEvent({ title, year, month, endYear, endMonth, description, terrainMap: null, participants: draftParticipants, parentEventId: eventFormParentId });
     currentEventId = id;
   }
   await refreshAll();
@@ -800,6 +828,11 @@ async function saveEventForm() {
 }
 
 async function deleteEvent(id) {
+  // 子出来事は消さず、トップレベルに昇格させる(データを失わないため)
+  for (const child of events.filter((c) => c.parentEventId === id)) {
+    child.parentEventId = null;
+    await DB.updateEvent(child);
+  }
   await DB.deleteEvent(id);
   await refreshAll();
   navStack = navStack.filter((v) => v !== 'view-event-detail');
@@ -852,6 +885,8 @@ function renderMemoAddPersonSelect() {
 function createEventFromMemo() {
   const memo = document.getElementById('memo-text').value.trim();
   editingEventId = null;
+  eventFormParentId = null;
+  document.getElementById('event-form-parent-note').textContent = '';
   document.getElementById('event-form-title').value = '';
   document.getElementById('event-form-year').value = '';
   document.getElementById('event-form-month').value = '';
@@ -892,6 +927,15 @@ function renderFamilyTree() {
     (father ? treeBoxHtml(father, '', '父') : treeAddButtonHtml('father', '父を追加'))
     + (mother ? treeBoxHtml(mother, '', '母') : treeAddButtonHtml('mother', '母を追加'));
 
+  const siblings = people.filter((c) => c.id !== p.id
+    && ((p.fatherId != null && c.fatherId === p.fatherId) || (p.motherId != null && c.motherId === p.motherId)));
+  document.getElementById('tree-siblings').innerHTML = siblings.map((s) => {
+    const sameFather = p.fatherId != null && s.fatherId === p.fatherId;
+    const sameMother = p.motherId != null && s.motherId === p.motherId;
+    const label = sameFather && sameMother ? '兄弟姉妹' : sameFather ? '異母兄弟姉妹' : '異父兄弟姉妹';
+    return treeBoxHtml(s, '', label);
+  }).join('') + treeAddButtonHtml('sibling', '兄弟姉妹を追加');
+
   const spouses = (p.spouseIds || []).map((sid) => personById(sid)).filter(Boolean);
   document.getElementById('tree-self').innerHTML = treeBoxHtml(p, 'self', formatPersonYears(p))
     + spouses.map((sp) => treeBoxHtml(sp, '', '配偶者')).join('')
@@ -924,6 +968,9 @@ async function treeAddPerson(relation) {
     const newId = await DB.addPerson({ ...base, spouseIds: [focus.id] });
     focus.spouseIds = [...(focus.spouseIds || []), newId];
     await DB.updatePerson(focus);
+  } else if (relation === 'sibling') {
+    // 本人と同じ父・母を持つ兄弟姉妹として登録する(父母が未設定ならそのまま空欄になる)
+    await DB.addPerson({ ...base, fatherId: focus.fatherId ?? null, motherId: focus.motherId ?? null });
   } else if (relation === 'child') {
     const asFather = confirm(`${focus.name}を新しい人物の「父」として登録しますか?\n(OK=父として登録／キャンセル=母として登録)`);
     const isAdopted = confirm('養子として登録しますか?\n(OK=養子として登録／キャンセル=実子として登録)');
@@ -982,6 +1029,7 @@ function wireLists() {
   delegate('people-list', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
   delegate('event-participants', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
   delegate('events-list', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
+  delegate('event-children-list', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
   delegate('person-timeline', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
 }
 
@@ -991,6 +1039,7 @@ function wireDetailActions() {
   document.getElementById('event-edit-btn').addEventListener('click', () => openEventForm(currentEventId));
   document.getElementById('event-delete-btn').addEventListener('click', () => askConfirm(() => deleteEvent(currentEventId)));
   document.getElementById('event-map-btn').addEventListener('click', () => { mapEditingEventId = currentEventId; navigateTo('view-event-map-editor'); });
+  document.getElementById('event-add-child-btn').addEventListener('click', () => openEventForm(null, currentEventId));
   document.getElementById('person-tree-btn').addEventListener('click', () => { familyTreeFocusId = currentPersonId; navigateTo('view-family-tree'); });
   document.getElementById('tree-edit-btn').addEventListener('click', () => openPersonForm(familyTreeFocusId));
   document.getElementById('view-family-tree').addEventListener('click', (e) => {
