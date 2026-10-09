@@ -393,7 +393,11 @@ function renderPersonDetail() {
   document.getElementById('person-youmei').textContent = p.youmei ? `幼名: ${p.youmei}` : '';
   document.getElementById('person-maiden-name').textContent = p.maidenName ? `旧姓: ${p.maidenName}` : '';
   document.getElementById('person-genpuku').textContent = p.genpukuYear != null ? `元服: ${formatYearMonth(p.genpukuYear, p.genpukuMonth)}` : '';
-  document.getElementById('person-roles').textContent = (p.roles || []).map((r) => `${r.role}(${formatRolePeriod(r)})`).join('、');
+  const rolesSorted = (p.roles || []).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+  document.getElementById('person-roles-timeline').innerHTML = rolesSorted.map((r) => `<li class="timeline-item">
+      <div class="timeline-year">${formatRolePeriod(r)}</div>
+      <div class="timeline-body"><div class="timeline-title">${escapeHtml(r.role)}</div></div>
+    </li>`).join('');
   document.getElementById('person-affiliations').textContent = (p.affiliations || []).map((a) => `${a.affiliation}(${formatRolePeriod(a)})`).join('、');
   document.getElementById('person-years').textContent = formatPersonYears(p);
 
