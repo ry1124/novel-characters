@@ -1301,6 +1301,18 @@ function renderFamilyTree() {
     adoptiveMother ? { person: adoptiveMother, label: '養母', rel: 'adoptiveMother' } : null,
   ].filter(Boolean);
 
+  // 祖父母: 表示中の父母(実親・養親含む)それぞれの実の父・母をさらに1世代さかのぼって表示する
+  const sideLabel = { father: '父方', mother: '母方', adoptiveFather: '養父方', adoptiveMother: '養母方' };
+  const grandparentGroups = parentEntries.map((entry) => {
+    const gf = entry.person.fatherId != null ? personById(entry.person.fatherId) : null;
+    const gm = entry.person.motherId != null ? personById(entry.person.motherId) : null;
+    const items = [
+      gf ? { person: gf, label: `${sideLabel[entry.rel]}の祖父` } : null,
+      gm ? { person: gm, label: `${sideLabel[entry.rel]}の祖母` } : null,
+    ].filter(Boolean);
+    return { entry, items };
+  });
+
   // 兄弟姉妹は、実親・養親のいずれかを1人でも共有していれば検出する(全血/異母/異父/養子同士も含む)
   const parentIdsOf = (x) => [x.fatherId, x.motherId, x.adoptiveFatherId, x.adoptiveMotherId].filter((id) => id != null);
   const pParentIds = new Set(parentIdsOf(p));
@@ -1312,8 +1324,11 @@ function renderFamilyTree() {
   const adoptedChildren = people.filter((c) => c.adoptiveFatherId === p.id || c.adoptiveMotherId === p.id);
   const childrenRowPeople = bioChildren.concat(adoptedChildren);
 
-  const rowY = { parents: 36, mid: 190, children: 344 };
+  const rowY = { grandparents: 36, parents: 190, mid: 344, children: 498 };
   const parentsPos = treeRowLayout(parentEntries.map((e) => e.person), rowY.parents);
+  // 祖父母は該当する親(父/養父/母/養母)の真上に、そのグループだけで中央寄せして配置する
+  const grandparentsPosGroups = grandparentGroups.map((g, i) => treeRowLayout(g.items.map((it) => it.person), rowY.grandparents, parentsPos[i] ? parentsPos[i].cx : 0));
+  const grandparentsPos = grandparentsPosGroups.flat();
   // 本人・兄弟姉妹は生年順の並びをそのまま中央寄せし、配偶者は本人の右隣に挿入する
   // (本人より年下の兄弟姉妹がいる場合は、挿入した配偶者の分だけ右へずらして重なりを避ける)
   const selfRowPosRaw = treeRowLayout(selfRowPeople, rowY.mid);
@@ -1331,21 +1346,31 @@ function renderFamilyTree() {
   const coupleCenterX = spousePos.length ? (selfPos.cx + spousePos[spousePos.length - 1].cx) / 2 : selfPos.cx;
   const childrenPos = treeRowLayout(childrenRowPeople, rowY.children, coupleCenterX);
 
-  const allX = [...parentsPos, ...midPos, ...childrenPos].map((b) => b.x);
+  const allX = [...grandparentsPos, ...parentsPos, ...midPos, ...childrenPos].map((b) => b.x);
   const minX = allX.length ? Math.min(...allX) : -TREE_BOX_W / 2;
   const maxX = allX.length ? Math.max(...allX) + TREE_BOX_W : TREE_BOX_W / 2;
   const width = Math.max(maxX - minX + 80, 320);
   const offsetX = -minX + 40;
   const shift = (boxes) => boxes.map((b) => ({ ...b, x: b.x + offsetX, cx: b.cx + offsetX }));
+  const grandparentsBoxes = shift(grandparentsPos);
   const parentsBoxes = shift(parentsPos);
   const midBoxes = shift(midPos);
   const childrenBoxes = shift(childrenPos);
+  // 祖父母はグループ(父方・母方など)ごとに連結線を引くため、シフト後の座標をグループ単位に戻す
+  let gpOffset = 0;
+  const grandparentsBoxGroups = grandparentGroups.map((g) => {
+    const boxes = grandparentsBoxes.slice(gpOffset, gpOffset + g.items.length);
+    gpOffset += g.items.length;
+    return { entry: g.entry, items: g.items, boxes };
+  });
 
+  const TREE_VIEW_H = 580;
+  const TREE_DISPLAY_RATIO = 0.8;
   const svg = document.getElementById('family-tree-svg');
-  svg.setAttribute('viewBox', `0 0 ${width} 400`);
-  // 表示領域の高さは固定(320px)、幅は人数が増えても縮めずviewBoxと同じ比率で伸ばし、はみ出た分は横スクロールで見る
-  svg.style.height = '320px';
-  svg.style.width = (width * 320 / 400) + 'px';
+  svg.setAttribute('viewBox', `0 0 ${width} ${TREE_VIEW_H}`);
+  // 表示領域の高さは固定、幅は人数が増えても縮めずviewBoxと同じ比率で伸ばし、はみ出た分は横スクロールで見る
+  svg.style.height = (TREE_VIEW_H * TREE_DISPLAY_RATIO) + 'px';
+  svg.style.width = (width * TREE_DISPLAY_RATIO) + 'px';
   svg.innerHTML = '';
   const LINE = '#b9b0d6';
   // 養子関係は実線2本("＝"風の二重線)、血縁は実線1本で見分けられるようにする
@@ -1357,6 +1382,24 @@ function renderFamilyTree() {
       svg.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: LINE, 'stroke-width': 2 }));
     }
   };
+
+  // 祖父母 → 該当する親への接続(本人-配偶者と同じ点線の婚姻線+組の中心から1本の線)
+  grandparentsBoxGroups.forEach((grp) => {
+    if (!grp.boxes.length) return;
+    const parentBox = parentsBoxes.find((b, i) => parentEntries[i].rel === grp.entry.rel);
+    if (!parentBox) return;
+    const gpBottomY = rowY.grandparents + TREE_BOX_H;
+    const gpCy = rowY.grandparents + TREE_BOX_H / 2;
+    let trunkX;
+    if (grp.boxes.length === 2) {
+      const [a, b] = grp.boxes;
+      svg.appendChild(svgEl('line', { x1: a.cx, y1: gpCy, x2: b.cx, y2: gpCy, stroke: '#5b37b7', 'stroke-width': 2, 'stroke-dasharray': '4,3' }));
+      trunkX = (a.cx + b.cx) / 2;
+    } else {
+      trunkX = grp.boxes[0].cx;
+    }
+    svg.appendChild(svgEl('line', { x1: trunkX, y1: gpBottomY, x2: parentBox.cx, y2: rowY.parents, stroke: LINE, 'stroke-width': 2 }));
+  });
 
   const selfPeopleBoxes = midBoxes.slice(0, selfRowPeople.length);
   if (parentsBoxes.length && selfPeopleBoxes.length) {
@@ -1433,6 +1476,7 @@ function renderFamilyTree() {
     svg.appendChild(g);
   };
 
+  grandparentsBoxGroups.forEach((grp) => grp.boxes.forEach((b, i) => drawBox(b, false, grp.items[i].label, 'grandparent')));
   parentsBoxes.forEach((b, i) => drawBox(b, false, parentEntries[i].label, parentEntries[i].rel));
   midBoxes.forEach((b, i) => {
     if (i < selfRowPeople.length) {
@@ -1502,6 +1546,10 @@ async function treeDeleteRelation(personId, relation) {
   if (relation === 'self') return; // 本人は人物の削除画面からのみ消せる
   if (relation === 'sibling') {
     alert('兄弟姉妹は共有している父・母の設定を変えないと解除できません(人物の編集画面から行ってください)');
+    return;
+  }
+  if (relation === 'grandparent') {
+    alert('祖父母との関係は、間にいる親(父・母など)を選んでその人物の編集画面から変更してください');
     return;
   }
   const target = personById(personId);
