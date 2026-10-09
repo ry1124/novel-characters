@@ -24,7 +24,12 @@ function escapeHtml(s) {
 }
 
 function eventTimeKey(ev) { return (ev.year ?? 0) * 100 + (ev.month ?? 0); }
-function formatEventTime(ev) { return `${ev.year}年` + (ev.month ? `${ev.month}月` : ''); }
+function formatYearMonth(y, m) { return `${y}年` + (m ? `${m}月` : ''); }
+function formatEventTime(ev) {
+  const start = formatYearMonth(ev.year, ev.month);
+  if (ev.endYear == null) return start;
+  return `${start}〜${formatYearMonth(ev.endYear, ev.endMonth)}`;
+}
 
 function peopleMapCache() { return new Map(people.map((p) => [p.id, p])); }
 function personById(id) { return people.find((p) => p.id === id); }
@@ -72,23 +77,59 @@ function switchTab(viewId) {
 function openPersonDetail(id) { currentPersonId = id; navigateTo('view-person-detail'); }
 function openEventDetail(id) { currentEventId = id; navigateTo('view-event-detail'); }
 
+// ===== 人物フォーム: 概要(年表)編集 =====
+let summaryDraftRows = [];
+let summaryOriginalEventIds = [];
+let summaryRowSeq = 0;
+function nextSummaryRowId() { return 'r' + (summaryRowSeq++); }
+
+// 「概要」に出す出来事は、この人物だけが参加している(他の人物と共有していない)もの限定。
+// 戦いなど複数参加者の出来事は、出来事タブ側でのみ編集する
+function loadSummaryRowsForPerson(personId) {
+  return events
+    .filter((ev) => (ev.participants || []).length === 1 && ev.participants[0].personId === personId)
+    .slice().sort((a, b) => eventTimeKey(a) - eventTimeKey(b))
+    .map((ev) => ({ rowId: nextSummaryRowId(), eventId: ev.id, year: ev.year, month: ev.month, detail: ev.title }));
+}
+
+function renderSummaryList() {
+  const listEl = document.getElementById('person-summary-list');
+  listEl.innerHTML = summaryDraftRows.map((row) => {
+    const options = ['', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => {
+      const label = m === '' ? '月-' : `${m}月`;
+      return `<option value="${m}" ${Number(row.month) === m || (!row.month && m === '') ? 'selected' : ''}>${label}</option>`;
+    }).join('');
+    return `<li class="participant-row summary-row" data-row-id="${row.rowId}">
+      <input class="ps-year" type="number" min="0" max="3000" value="${row.year ?? ''}">
+      <select class="ps-month">${options}</select>
+      <input class="ps-detail" type="text" value="${escapeHtml(row.detail || '')}" placeholder="詳細">
+      <button type="button" class="remove-btn" data-remove-summary="${row.rowId}">×</button>
+    </li>`;
+  }).join('');
+}
+
 function openPersonForm(id) {
   editingPersonId = id;
   const nameEl = document.getElementById('person-form-name');
   const kanaEl = document.getElementById('person-form-kana');
   const birthEl = document.getElementById('person-form-birth');
   const deathEl = document.getElementById('person-form-death');
-  const summaryEl = document.getElementById('person-form-summary');
   if (id) {
     const p = personById(id);
     nameEl.value = p.name || '';
     kanaEl.value = p.kana || '';
     birthEl.value = p.birthYear ?? '';
     deathEl.value = p.deathYear ?? '';
-    summaryEl.value = p.summary || '';
+    summaryDraftRows = loadSummaryRowsForPerson(id);
   } else {
-    nameEl.value = ''; kanaEl.value = ''; birthEl.value = ''; deathEl.value = ''; summaryEl.value = '';
+    nameEl.value = ''; kanaEl.value = ''; birthEl.value = ''; deathEl.value = '';
+    summaryDraftRows = [];
   }
+  summaryOriginalEventIds = summaryDraftRows.map((r) => r.eventId);
+  document.getElementById('person-summary-add-year').value = '';
+  document.getElementById('person-summary-add-month').value = '';
+  document.getElementById('person-summary-add-detail').value = '';
+  renderSummaryList();
   navigateTo('view-edit-person');
 }
 
@@ -97,16 +138,21 @@ function openEventForm(id) {
   const titleEl = document.getElementById('event-form-title');
   const yearEl = document.getElementById('event-form-year');
   const monthEl = document.getElementById('event-form-month');
+  const endYearEl = document.getElementById('event-form-end-year');
+  const endMonthEl = document.getElementById('event-form-end-month');
   const descEl = document.getElementById('event-form-description');
   if (id) {
     const ev = eventById(id);
     titleEl.value = ev.title || '';
     yearEl.value = ev.year ?? '';
     monthEl.value = ev.month ?? '';
+    endYearEl.value = ev.endYear ?? '';
+    endMonthEl.value = ev.endMonth ?? '';
     descEl.value = ev.description || '';
     draftParticipants = (ev.participants || []).map((p) => ({ ...p }));
   } else {
-    titleEl.value = ''; yearEl.value = ''; monthEl.value = ''; descEl.value = '';
+    titleEl.value = ''; yearEl.value = ''; monthEl.value = '';
+    endYearEl.value = ''; endMonthEl.value = ''; descEl.value = '';
     draftParticipants = [];
   }
   renderEventFormParticipants();
@@ -156,7 +202,6 @@ function renderPersonDetail() {
   document.getElementById('person-name').textContent = p.name;
   document.getElementById('person-kana').textContent = p.kana || '';
   document.getElementById('person-years').textContent = formatPersonYears(p);
-  document.getElementById('person-summary').textContent = p.summary || '';
 
   const death = getDeathInfo(p.id);
   const banner = document.getElementById('person-death-banner');
@@ -390,6 +435,34 @@ function hideConfirm() {
 // ===== 保存・削除処理 =====
 function clampYear(v) { return Math.min(3000, Math.max(0, Number(v) || 0)); }
 
+// 概要(年表)の各行を、この人物を唯一の参加者とする「出来事」として作成・更新・削除する
+async function syncSummaryRows(personId) {
+  const keepEventIds = new Set();
+  for (const row of summaryDraftRows) {
+    const detail = (row.detail || '').trim();
+    if (!detail) continue;
+    const year = clampYear(row.year);
+    const month = row.month ? Number(row.month) : null;
+    if (row.eventId) {
+      const ev = eventById(row.eventId);
+      if (ev) {
+        ev.title = detail; ev.year = year; ev.month = month;
+        await DB.updateEvent(ev);
+        keepEventIds.add(row.eventId);
+        continue;
+      }
+    }
+    const newId = await DB.addEvent({
+      title: detail, year, month, endYear: null, endMonth: null, description: '',
+      terrainMap: null, participants: [{ personId, status: '生存', note: '', position: null }],
+    });
+    keepEventIds.add(newId);
+  }
+  for (const oldId of summaryOriginalEventIds) {
+    if (!keepEventIds.has(oldId)) await DB.deleteEvent(oldId);
+  }
+}
+
 async function savePersonForm() {
   const name = document.getElementById('person-form-name').value.trim();
   if (!name) { alert('名前を入力してください'); return; }
@@ -399,15 +472,16 @@ async function savePersonForm() {
   const birthYear = birthVal ? clampYear(birthVal) : null;
   const deathYear = deathVal ? clampYear(deathVal) : null;
   if (birthYear !== null && deathYear !== null && birthYear > deathYear) { alert('生年は没年より前にしてください'); return; }
-  const summary = document.getElementById('person-form-summary').value.trim();
+  let personId = editingPersonId;
   if (editingPersonId) {
     const p = personById(editingPersonId);
-    p.name = name; p.kana = kana; p.birthYear = birthYear; p.deathYear = deathYear; p.summary = summary;
+    p.name = name; p.kana = kana; p.birthYear = birthYear; p.deathYear = deathYear;
     await DB.updatePerson(p);
   } else {
-    const id = await DB.addPerson({ name, kana, birthYear, deathYear, summary, createdAt: Date.now() });
-    currentPersonId = id;
+    personId = await DB.addPerson({ name, kana, birthYear, deathYear, createdAt: Date.now() });
+    currentPersonId = personId;
   }
+  await syncSummaryRows(personId);
   await refreshAll();
   goBack();
 }
@@ -415,7 +489,8 @@ async function savePersonForm() {
 async function deletePerson(id) {
   for (const ev of events.filter((e) => (e.participants || []).some((p) => p.personId === id))) {
     ev.participants = ev.participants.filter((p) => p.personId !== id);
-    await DB.updateEvent(ev);
+    if (ev.participants.length === 0) await DB.deleteEvent(ev.id); // 参加者がいなくなる出来事(概要由来など)は残さない
+    else await DB.updateEvent(ev);
   }
   await DB.deletePerson(id);
   await refreshAll();
@@ -429,14 +504,22 @@ async function saveEventForm() {
   const year = clampYear(document.getElementById('event-form-year').value);
   const monthVal = document.getElementById('event-form-month').value;
   const month = monthVal ? Number(monthVal) : null;
+  const endYearVal = document.getElementById('event-form-end-year').value;
+  const endYear = endYearVal ? clampYear(endYearVal) : null;
+  const endMonthVal = document.getElementById('event-form-end-month').value;
+  const endMonth = endMonthVal ? Number(endMonthVal) : null;
+  if (endYear !== null && (year * 100 + (month || 0)) > (endYear * 100 + (endMonth || 0))) {
+    alert('終了時期は開始時期より後にしてください'); return;
+  }
   const description = document.getElementById('event-form-description').value.trim();
   if (editingEventId) {
     const ev = eventById(editingEventId);
-    ev.title = title; ev.year = year; ev.month = month; ev.description = description; ev.participants = draftParticipants;
+    ev.title = title; ev.year = year; ev.month = month; ev.endYear = endYear; ev.endMonth = endMonth;
+    ev.description = description; ev.participants = draftParticipants;
     await DB.updateEvent(ev);
     currentEventId = ev.id;
   } else {
-    const id = await DB.addEvent({ title, year, month, description, terrainMap: null, participants: draftParticipants });
+    const id = await DB.addEvent({ title, year, month, endYear, endMonth, description, terrainMap: null, participants: draftParticipants });
     currentEventId = id;
   }
   await refreshAll();
@@ -538,6 +621,43 @@ function wireForms() {
     draftParticipants = draftParticipants.filter((p) => p.personId !== pid);
     renderEventFormParticipants();
     renderAddPersonSelect();
+  });
+
+  document.getElementById('person-summary-add-btn').addEventListener('click', () => {
+    const yearEl = document.getElementById('person-summary-add-year');
+    const monthEl = document.getElementById('person-summary-add-month');
+    const detailEl = document.getElementById('person-summary-add-detail');
+    const detail = detailEl.value.trim();
+    if (!detail) return;
+    summaryDraftRows.push({
+      rowId: nextSummaryRowId(), eventId: null,
+      year: clampYear(yearEl.value), month: monthEl.value ? Number(monthEl.value) : null, detail,
+    });
+    yearEl.value = ''; monthEl.value = ''; detailEl.value = '';
+    renderSummaryList();
+  });
+
+  const summaryList = document.getElementById('person-summary-list');
+  summaryList.addEventListener('input', (e) => {
+    const row = e.target.closest('.summary-row');
+    if (!row) return;
+    const draft = summaryDraftRows.find((r) => r.rowId === row.dataset.rowId);
+    if (!draft) return;
+    if (e.target.classList.contains('ps-year')) draft.year = clampYear(e.target.value);
+    else if (e.target.classList.contains('ps-detail')) draft.detail = e.target.value;
+  });
+  summaryList.addEventListener('change', (e) => {
+    const row = e.target.closest('.summary-row');
+    if (!row) return;
+    const draft = summaryDraftRows.find((r) => r.rowId === row.dataset.rowId);
+    if (!draft) return;
+    if (e.target.classList.contains('ps-month')) draft.month = e.target.value ? Number(e.target.value) : null;
+  });
+  summaryList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-summary]');
+    if (!btn) return;
+    summaryDraftRows = summaryDraftRows.filter((r) => r.rowId !== btn.dataset.removeSummary);
+    renderSummaryList();
   });
 }
 

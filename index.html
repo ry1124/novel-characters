@@ -47,7 +47,6 @@
       <h2 id="person-name"></h2>
       <div class="detail-sub" id="person-kana"></div>
       <div class="detail-sub" id="person-years"></div>
-      <div class="detail-sub" id="person-summary"></div>
     </div>
     <div id="person-death-banner" class="death-banner hidden"></div>
     <div class="section-label">経歴年表</div>
@@ -109,7 +108,24 @@
       <div class="form-row"><label>読み(かな・検索用、任意)</label><input id="person-form-kana" type="text" placeholder="例: やまだたろう"></div>
       <div class="form-row"><label>生年(0〜3000)</label><input id="person-form-birth" type="number" min="0" max="3000" placeholder="例: 480"></div>
       <div class="form-row"><label>没年(0〜3000、存命・不明なら空欄)</label><input id="person-form-death" type="number" min="0" max="3000" placeholder="例: 540"></div>
-      <div class="form-row"><label>概要(任意)</label><textarea id="person-form-summary" placeholder="人物の概要・設定など"></textarea></div>
+      <div class="section-label" style="padding-left:0;">概要(年表)</div>
+      <div class="form-note">年月と詳細を入力すると、この人物の「出来事」として自動的に登録されます</div>
+      <ul id="person-summary-list" class="list" style="padding:0;"></ul>
+      <div class="form-row">
+        <label>年月・詳細を追加</label>
+        <div class="event-time-row">
+          <input id="person-summary-add-year" type="number" min="0" max="3000" placeholder="年">
+          <select id="person-summary-add-month">
+            <option value="">月-</option>
+            <option value="1">1月</option><option value="2">2月</option><option value="3">3月</option>
+            <option value="4">4月</option><option value="5">5月</option><option value="6">6月</option>
+            <option value="7">7月</option><option value="8">8月</option><option value="9">9月</option>
+            <option value="10">10月</option><option value="11">11月</option><option value="12">12月</option>
+          </select>
+          <input id="person-summary-add-detail" type="text" placeholder="詳細を書く">
+        </div>
+      </div>
+      <button class="btn-secondary" id="person-summary-add-btn" type="button">+ 概要に追加</button>
     </div>
   </section>
 
@@ -132,6 +148,19 @@
             <option value="10">10月</option><option value="11">11月</option><option value="12">12月</option>
           </select>
           <input id="event-form-title" type="text" placeholder="出来事を書く(例: ○○の戦い)">
+        </div>
+      </div>
+      <div class="form-row">
+        <label>終了時期(任意、期間がある出来事のみ)</label>
+        <div class="event-time-row">
+          <input id="event-form-end-year" type="number" min="0" max="3000" placeholder="終了年">
+          <select id="event-form-end-month">
+            <option value="">月-</option>
+            <option value="1">1月</option><option value="2">2月</option><option value="3">3月</option>
+            <option value="4">4月</option><option value="5">5月</option><option value="6">6月</option>
+            <option value="7">7月</option><option value="8">8月</option><option value="9">9月</option>
+            <option value="10">10月</option><option value="11">11月</option><option value="12">12月</option>
+          </select>
         </div>
       </div>
       <div class="form-row"><label>説明(任意)</label><textarea id="event-form-description" placeholder="出来事の内容"></textarea></div>
