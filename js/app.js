@@ -1053,6 +1053,9 @@ function renderFamilyTree() {
 
   const svg = document.getElementById('family-tree-svg');
   svg.setAttribute('viewBox', `0 0 ${width} 400`);
+  // 表示領域の高さは固定(320px)、幅は人数が増えても縮めずviewBoxと同じ比率で伸ばし、はみ出た分は横スクロールで見る
+  svg.style.height = '320px';
+  svg.style.width = (width * 320 / 400) + 'px';
   svg.innerHTML = '';
   const LINE = '#b9b0d6';
 

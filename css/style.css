@@ -231,5 +231,10 @@ html, body {
 .map-tool-btn { padding: 8px 14px; border-radius: 10px; background: var(--surface2); color: var(--text); border: none; font-size: 13px; cursor: pointer; }
 .map-tool-btn.active { background: var(--accent); color: #fff; }
 .map-canvas-wrap { padding: 0 16px; }
-.map-canvas { width: 100%; aspect-ratio: 4 / 3; background: #dfe8d8; border-radius: 12px; touch-action: none; }
+.map-canvas { width: 100%; aspect-ratio: 4 / 3; background: #dfe8d8; border-radius: 12px; }
+#map-svg { touch-action: none; }
 .map-hint { font-size: 12px; color: var(--text-dim); padding: 8px 16px 0; }
+
+/* ===== 家系図: 人数が多いと横に広がるためスクロール可能にする ===== */
+.tree-wrap { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
+.tree-wrap #family-tree-svg { width: auto; max-width: none; aspect-ratio: auto; height: 320px; display: block; background: #f4f2fa; }

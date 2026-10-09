@@ -152,7 +152,7 @@
       <h1 style="font-size:20px;">家系図</h1>
       <div class="topbar-actions"><button class="icon-btn" id="tree-edit-btn">編集</button></div>
     </div>
-    <div class="map-canvas-wrap"><svg id="family-tree-svg" class="map-canvas" viewBox="0 0 400 400" style="background:#f4f2fa;"></svg></div>
+    <div class="map-canvas-wrap tree-wrap"><svg id="family-tree-svg" class="map-canvas" viewBox="0 0 400 400"></svg></div>
     <div class="map-hint">凡例: 実線=親子、点線=配偶者。ボックスをタップするとその人物を中心に表示が切り替わります</div>
     <div class="map-toolbar">
       <button type="button" class="map-tool-btn" data-tree-add="father">+ 父</button>
@@ -183,6 +183,8 @@
     <div class="form-body">
       <div class="form-row"><label>名前</label><input id="person-form-name" type="text" placeholder="人物名"></div>
       <div class="form-row"><label>読み(かな・検索用、任意)</label><input id="person-form-kana" type="text" placeholder="例: やまだたろう"></div>
+      <div class="form-row"><label>生年(0〜3000)</label><input id="person-form-birth" type="number" min="0" max="3000" placeholder="例: 480"></div>
+      <div class="form-row"><label>没年(0〜3000、存命・不明なら空欄)</label><input id="person-form-death" type="number" min="0" max="3000" placeholder="例: 540"></div>
       <div class="form-row"><label>幼名(任意)</label><input id="person-form-youmei" type="text" placeholder="例: 竹千代"></div>
       <div class="form-row"><label>旧姓(任意)</label><input id="person-form-maiden-name" type="text" placeholder="例: 鈴木"></div>
       <div class="form-row">
@@ -198,8 +200,6 @@
           </select>
         </div>
       </div>
-      <div class="form-row"><label>生年(0〜3000)</label><input id="person-form-birth" type="number" min="0" max="3000" placeholder="例: 480"></div>
-      <div class="form-row"><label>没年(0〜3000、存命・不明なら空欄)</label><input id="person-form-death" type="number" min="0" max="3000" placeholder="例: 540"></div>
       <div class="section-label" style="padding-left:0;">役職(複数・期間あり可)</div>
       <div class="form-note">同時に2つ以上持っていてもよい。終了年を空欄にすると、現在も続いている扱いになる</div>
       <ul id="person-role-list" class="list" style="padding:0;"></ul>
