@@ -176,6 +176,7 @@ function openPersonForm(id) {
   const nameEl = document.getElementById('person-form-name');
   const kanaEl = document.getElementById('person-form-kana');
   const youmeiEl = document.getElementById('person-form-youmei');
+  const maidenNameEl = document.getElementById('person-form-maiden-name');
   const birthEl = document.getElementById('person-form-birth');
   const deathEl = document.getElementById('person-form-death');
   const fatherEl = document.getElementById('person-form-father');
@@ -185,6 +186,7 @@ function openPersonForm(id) {
     nameEl.value = p.name || '';
     kanaEl.value = p.kana || '';
     youmeiEl.value = p.youmei || '';
+    maidenNameEl.value = p.maidenName || '';
     birthEl.value = p.birthYear ?? '';
     deathEl.value = p.deathYear ?? '';
     summaryDraftRows = loadSummaryRowsForPerson(id);
@@ -193,7 +195,7 @@ function openPersonForm(id) {
     motherEl.innerHTML = personSelectOptions(id, p.motherId);
     spouseDraftIds = (p.spouseIds || []).slice();
   } else {
-    nameEl.value = ''; kanaEl.value = ''; youmeiEl.value = ''; birthEl.value = ''; deathEl.value = '';
+    nameEl.value = ''; kanaEl.value = ''; youmeiEl.value = ''; maidenNameEl.value = ''; birthEl.value = ''; deathEl.value = '';
     summaryDraftRows = [];
     roleDraftRows = [];
     fatherEl.innerHTML = personSelectOptions(null, null);
@@ -247,7 +249,8 @@ function renderSearch() {
   const emptyEl = document.getElementById('search-empty');
   if (!q) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); emptyEl.textContent = '名前を入力すると、人物の経歴を検索できます'; return; }
   const hits = people.filter((p) => (p.name || '').toLowerCase().includes(q) || (p.kana || '').toLowerCase().includes(q)
-    || (p.youmei || '').toLowerCase().includes(q) || (p.roles || []).some((r) => (r.role || '').toLowerCase().includes(q)));
+    || (p.youmei || '').toLowerCase().includes(q) || (p.maidenName || '').toLowerCase().includes(q)
+    || (p.roles || []).some((r) => (r.role || '').toLowerCase().includes(q)));
   if (!hits.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); emptyEl.textContent = '該当する人物が見つかりません'; return; }
   emptyEl.classList.add('hidden');
   listEl.innerHTML = hits.map((p) => personListItemHtml(p)).join('');
@@ -290,6 +293,7 @@ function renderPersonDetail() {
   document.getElementById('person-name').textContent = p.name;
   document.getElementById('person-kana').textContent = p.kana || '';
   document.getElementById('person-youmei').textContent = p.youmei ? `幼名: ${p.youmei}` : '';
+  document.getElementById('person-maiden-name').textContent = p.maidenName ? `旧姓: ${p.maidenName}` : '';
   document.getElementById('person-roles').textContent = (p.roles || []).map((r) => `${r.role}(${formatRolePeriod(r)})`).join('、');
   document.getElementById('person-years').textContent = formatPersonYears(p);
 
@@ -570,6 +574,7 @@ async function savePersonForm() {
   if (!name) { alert('名前を入力してください'); return; }
   const kana = document.getElementById('person-form-kana').value.trim();
   const youmei = document.getElementById('person-form-youmei').value.trim();
+  const maidenName = document.getElementById('person-form-maiden-name').value.trim();
   const birthVal = document.getElementById('person-form-birth').value;
   const deathVal = document.getElementById('person-form-death').value;
   const birthYear = birthVal ? clampYear(birthVal) : null;
@@ -592,11 +597,11 @@ async function savePersonForm() {
   if (editingPersonId) {
     const p = personById(editingPersonId);
     oldSpouseIds = p.spouseIds || [];
-    p.name = name; p.kana = kana; p.youmei = youmei; p.roles = roles; p.birthYear = birthYear; p.deathYear = deathYear;
+    p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.roles = roles; p.birthYear = birthYear; p.deathYear = deathYear;
     p.fatherId = fatherId; p.motherId = motherId; p.spouseIds = spouseIds;
     await DB.updatePerson(p);
   } else {
-    personId = await DB.addPerson({ name, kana, youmei, roles, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now() });
+    personId = await DB.addPerson({ name, kana, youmei, maidenName, roles, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now() });
     currentPersonId = personId;
   }
   await syncSpouseLinks(personId, oldSpouseIds, spouseIds);
@@ -693,7 +698,7 @@ function openMemoImport() {
 function detectPeopleInMemo() {
   const text = document.getElementById('memo-text').value;
   memoDetectedPersonIds = new Set(
-    people.filter((p) => [p.name, p.kana, p.youmei].filter(Boolean).some((n) => text.includes(n))).map((p) => p.id)
+    people.filter((p) => [p.name, p.kana, p.youmei, p.maidenName].filter(Boolean).some((n) => text.includes(n))).map((p) => p.id)
   );
   renderMemoDetectedList();
 }
@@ -749,6 +754,10 @@ function treeBoxHtml(person, extraClass, subText) {
   </button>`;
 }
 
+function treeAddButtonHtml(relation, label) {
+  return `<button type="button" class="tree-box add" data-tree-add="${relation}">+ ${escapeHtml(label)}</button>`;
+}
+
 function openFamilyTree(id) {
   familyTreeFocusId = id;
   renderFamilyTree();
@@ -760,21 +769,47 @@ function renderFamilyTree() {
 
   const father = p.fatherId != null ? personById(p.fatherId) : null;
   const mother = p.motherId != null ? personById(p.motherId) : null;
-  const parentsEl = document.getElementById('tree-parents');
-  parentsEl.innerHTML = (father || mother)
-    ? treeBoxHtml(father, '', '父') + treeBoxHtml(mother, '', '母')
-    : '<div class="tree-empty">未設定</div>';
+  document.getElementById('tree-parents').innerHTML =
+    (father ? treeBoxHtml(father, '', '父') : treeAddButtonHtml('father', '父を追加'))
+    + (mother ? treeBoxHtml(mother, '', '母') : treeAddButtonHtml('mother', '母を追加'));
 
   const spouses = (p.spouseIds || []).map((sid) => personById(sid)).filter(Boolean);
-  const selfEl = document.getElementById('tree-self');
-  selfEl.innerHTML = treeBoxHtml(p, 'self', formatPersonYears(p))
-    + spouses.map((sp) => treeBoxHtml(sp, '', '配偶者')).join('');
+  document.getElementById('tree-self').innerHTML = treeBoxHtml(p, 'self', formatPersonYears(p))
+    + spouses.map((sp) => treeBoxHtml(sp, '', '配偶者')).join('')
+    + treeAddButtonHtml('spouse', '配偶者を追加');
 
   const children = people.filter((c) => c.fatherId === p.id || c.motherId === p.id);
-  const childrenEl = document.getElementById('tree-children');
-  childrenEl.innerHTML = children.length
-    ? children.map((c) => treeBoxHtml(c, '', formatPersonYears(c))).join('')
-    : '<div class="tree-empty">未登録</div>';
+  document.getElementById('tree-children').innerHTML =
+    children.map((c) => treeBoxHtml(c, '', formatPersonYears(c))).join('')
+    + treeAddButtonHtml('child', '子を追加');
+}
+
+// 家系図の画面から、その場で新しい人物を作って関係を結ぶ(父・母・配偶者・子)
+async function treeAddPerson(relation) {
+  const focus = personById(familyTreeFocusId);
+  if (!focus) return;
+  const name = (prompt('新しい人物の名前を入力してください') || '').trim();
+  if (!name) return;
+  const base = { name, kana: '', youmei: '', roles: [], birthYear: null, deathYear: null, fatherId: null, motherId: null, spouseIds: [], createdAt: Date.now() };
+
+  if (relation === 'father') {
+    const newId = await DB.addPerson(base);
+    focus.fatherId = newId;
+    await DB.updatePerson(focus);
+  } else if (relation === 'mother') {
+    const newId = await DB.addPerson(base);
+    focus.motherId = newId;
+    await DB.updatePerson(focus);
+  } else if (relation === 'spouse') {
+    const newId = await DB.addPerson({ ...base, spouseIds: [focus.id] });
+    focus.spouseIds = [...(focus.spouseIds || []), newId];
+    await DB.updatePerson(focus);
+  } else if (relation === 'child') {
+    const asFather = confirm(`${focus.name}を新しい人物の「父」として登録しますか?\n(OK=父として登録／キャンセル=母として登録)`);
+    await DB.addPerson({ ...base, fatherId: asFather ? focus.id : null, motherId: asFather ? null : focus.id });
+  }
+  await refreshAll();
+  renderFamilyTree();
 }
 
 const RENDER_FNS = {
@@ -835,6 +870,8 @@ function wireDetailActions() {
   document.getElementById('person-tree-btn').addEventListener('click', () => { familyTreeFocusId = currentPersonId; navigateTo('view-family-tree'); });
   document.getElementById('tree-edit-btn').addEventListener('click', () => openPersonForm(familyTreeFocusId));
   document.getElementById('view-family-tree').addEventListener('click', (e) => {
+    const addBtn = e.target.closest('[data-tree-add]');
+    if (addBtn) { treeAddPerson(addBtn.dataset.treeAdd); return; }
     const box = e.target.closest('[data-tree-person]');
     if (!box) return;
     familyTreeFocusId = Number(box.dataset.treePerson);

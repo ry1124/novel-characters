@@ -211,7 +211,7 @@ html, body {
 .tree-box.self { background: var(--accent); color: #fff; font-weight: 700; cursor: default; }
 .tree-box-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
 .tree-box.self .tree-box-sub { color: rgba(255,255,255,0.8); }
-.tree-empty { color: var(--text-dim); font-size: 13px; padding: 4px 0; }
+.tree-box.add { background: none; border: 1px dashed var(--border); color: var(--accent); font-weight: 600; }
 
 /* ===== 地形配置エディタ ===== */
 .map-toolbar { display: flex; gap: 8px; padding: 8px 16px; flex-wrap: wrap; }
