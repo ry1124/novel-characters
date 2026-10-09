@@ -659,6 +659,7 @@ async function init() {
   wireBackup();
   initMapEditorEvents();
   document.getElementById('app-version').textContent = APP_VERSION;
+  document.getElementById('app-version-home').textContent = 'v' + APP_VERSION;
   applyView('view-search');
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('service-worker.js').catch(() => {});
