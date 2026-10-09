@@ -274,30 +274,29 @@
       </div>
       <button class="btn-secondary" id="person-skill-add-btn" type="button">+ 技を追加</button>
       <div class="section-label" style="padding-left:0;">家族(任意)</div>
-      <div class="form-row"><label>父(名前を直接入力可。未登録の名前なら自動で人物を追加します)</label><input id="person-form-father" type="text" list="person-name-datalist" placeholder="父の名前"></div>
-      <div class="form-row"><label>母(名前を直接入力可。未登録の名前なら自動で人物を追加します)</label><input id="person-form-mother" type="text" list="person-name-datalist" placeholder="母の名前"></div>
-      <datalist id="person-name-datalist"></datalist>
+      <div class="form-row"><label>父</label><select id="person-form-father"></select></div>
+      <div class="form-row"><label>母</label><select id="person-form-mother"></select></div>
       <datalist id="affiliation-datalist"></datalist>
       <datalist id="role-datalist"></datalist>
-      <div class="form-note">配偶者(名前を直接入力可。未登録の名前なら自動で人物を追加します)</div>
+      <div class="form-note">配偶者</div>
       <ul id="person-spouse-list" class="list" style="padding:0;"></ul>
       <div class="form-row">
-        <input id="person-spouse-add" type="text" list="person-name-datalist" placeholder="配偶者の名前">
+        <select id="person-spouse-add"></select>
       </div>
       <button class="btn-secondary" id="person-spouse-add-btn" type="button">+ 配偶者に追加</button>
 
       <div id="person-children-section" class="hidden">
-        <div class="form-note">子(名前を直接入力可。未登録の名前なら自動で人物を追加します。保存済みの人物のみ設定できます)</div>
+        <div class="form-note">子</div>
         <ul id="person-children-list" class="list" style="padding:0;"></ul>
         <div class="form-row">
-          <input id="person-child-add" type="text" list="person-name-datalist" placeholder="子の名前">
+          <select id="person-child-add"></select>
         </div>
         <button class="btn-secondary" id="person-child-add-btn" type="button">+ 子を追加</button>
 
         <div class="form-note">養子(血縁ではない子)</div>
         <ul id="person-adopted-children-list" class="list" style="padding:0;"></ul>
         <div class="form-row">
-          <input id="person-adopted-child-add" type="text" list="person-name-datalist" placeholder="養子の名前">
+          <select id="person-adopted-child-add"></select>
         </div>
         <button class="btn-secondary" id="person-adopted-child-add-btn" type="button">+ 養子を追加</button>
       </div>
@@ -308,7 +307,7 @@
       <div class="form-row">
         <label>関係を追加</label>
         <div class="event-time-row">
-          <input id="person-relationship-add-person" type="text" list="person-name-datalist" placeholder="相手の名前">
+          <select id="person-relationship-add-person" style="flex:1;width:auto;"></select>
           <input id="person-relationship-add-type" type="text" list="relationship-type-datalist" placeholder="関係(例: 師弟)">
         </div>
       </div>

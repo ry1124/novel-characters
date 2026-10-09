@@ -258,8 +258,6 @@ function renderSpouseList() {
 }
 
 function renderPersonNameDatalist() {
-  document.getElementById('person-name-datalist').innerHTML =
-    people.map((p) => `<option value="${escapeHtml(p.name)}"></option>`).join('');
   // 他の人物が既に使っている所属名を候補に出す(新しい表記ゆれを防ぐ)
   const affiliationNames = new Set();
   people.forEach((p) => (p.affiliations || []).forEach((a) => { if (a.affiliation) affiliationNames.add(a.affiliation); }));
@@ -269,6 +267,38 @@ function renderPersonNameDatalist() {
   people.forEach((p) => (p.roles || []).forEach((r) => { if (r.role) roleNames.add(r.role); }));
   document.getElementById('role-datalist').innerHTML =
     Array.from(roleNames).map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
+  populatePersonFormSelects();
+}
+
+// ===== 人物フォーム: 既存の人物をプルダウンから選べるようにする共通処理 =====
+// (datalistはiOS Safariでの対応が不安定で、見えない/選べないことがあるため使わない)
+const NEW_PERSON_OPTION = '__new__';
+function personSelectOptionsHtml(selectedId, excludeIds, placeholder) {
+  const exclude = new Set((excludeIds || []).filter((id) => id != null));
+  const sorted = people.filter((p) => !exclude.has(p.id)).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
+  const opts = [`<option value="">${escapeHtml(placeholder)}</option>`, `<option value="${NEW_PERSON_OPTION}">+ 新しい人物を作成...</option>`];
+  sorted.forEach((p) => {
+    opts.push(`<option value="${p.id}" ${String(p.id) === String(selectedId ?? '') ? 'selected' : ''}>${escapeHtml(p.name)}</option>`);
+  });
+  return opts.join('');
+}
+
+// 現在選択中の値は保持したまま、全ての人物選択プルダウンの選択肢を最新のpeopleで作り直す。
+// overridesで渡したものだけ選択値を明示的に変更する(新規作成直後など)
+function populatePersonFormSelects(overrides) {
+  overrides = overrides || {};
+  const excludeSelf = editingPersonId != null ? [editingPersonId] : [];
+  const fatherEl = document.getElementById('person-form-father');
+  const motherEl = document.getElementById('person-form-mother');
+  const curFather = 'father' in overrides ? overrides.father : fatherEl.value;
+  const curMother = 'mother' in overrides ? overrides.mother : motherEl.value;
+  fatherEl.innerHTML = personSelectOptionsHtml(curFather, excludeSelf, '(未設定)');
+  motherEl.innerHTML = personSelectOptionsHtml(curMother, excludeSelf, '(未設定)');
+  document.getElementById('person-spouse-add').innerHTML =
+    personSelectOptionsHtml('', [...excludeSelf, ...spouseDraftIds], '選択してください');
+  document.getElementById('person-child-add').innerHTML = personSelectOptionsHtml('', excludeSelf, '選択してください');
+  document.getElementById('person-adopted-child-add').innerHTML = personSelectOptionsHtml('', excludeSelf, '選択してください');
+  document.getElementById('person-relationship-add-person').innerHTML = personSelectOptionsHtml('', excludeSelf, '選択してください');
 }
 
 // ===== 人物フォーム: 子・養子(保存済みの人物のみ、その場で関係を更新) =====
@@ -290,16 +320,26 @@ function renderChildrenSection() {
     </li>`).join('');
 }
 
+// 人物選択プルダウンの選択値から人物IDを取り出す。「+ 新しい人物を作成...」ならその場で名前を聞いて作成する
+async function resolvePersonFromSelect(selectEl, promptLabel) {
+  const val = selectEl.value;
+  if (!val) return null;
+  if (val === NEW_PERSON_OPTION) {
+    const name = (prompt(`${promptLabel}の名前を入力してください`) || '').trim();
+    if (!name) return null;
+    return await resolvePersonByName(name, editingPersonId);
+  }
+  return Number(val);
+}
+
 // kind: 'bio' | 'adopted'。子となる人物の父/母(または養父/養母)の欄に、この編集中の人物を設定する
-async function addChildRelation(inputId, kind) {
+async function addChildRelation(selectId, kind) {
   if (!editingPersonId) return;
-  const input = document.getElementById(inputId);
-  const name = input.value.trim();
-  if (!name) return;
+  const select = document.getElementById(selectId);
+  const childId = await resolvePersonFromSelect(select, kind === 'bio' ? '子' : '養子');
+  if (childId == null || childId === editingPersonId) { populatePersonFormSelects(); return; } // 自分自身を子にはできない
   const focus = personById(editingPersonId);
   const asFather = confirm(`${focus.name}を新しい子の「父」として登録しますか?\n(OK=父として登録／キャンセル=母として登録)`);
-  const childId = await resolvePersonByName(name, editingPersonId);
-  if (childId === editingPersonId) { input.value = ''; return; } // 自分自身を子にはできない
   const child = await DB.getPerson(childId);
   if (kind === 'bio') {
     if (asFather) child.fatherId = editingPersonId; else child.motherId = editingPersonId;
@@ -308,7 +348,6 @@ async function addChildRelation(inputId, kind) {
   }
   await DB.updatePerson(child);
   await refreshAll();
-  input.value = '';
   renderChildrenSection();
   renderPersonNameDatalist();
 }
@@ -353,8 +392,8 @@ function openPersonForm(id) {
   const genpukuMonthEl = document.getElementById('person-form-genpuku-month');
   const birthEl = document.getElementById('person-form-birth');
   const deathEl = document.getElementById('person-form-death');
-  const fatherEl = document.getElementById('person-form-father');
-  const motherEl = document.getElementById('person-form-mother');
+  let initialFatherId = '';
+  let initialMotherId = '';
   if (id) {
     const p = personById(id);
     nameEl.value = p.name || '';
@@ -373,8 +412,8 @@ function openPersonForm(id) {
     abilityDraftRows = (p.abilities || []).map((a) => ({ rowId: nextAbilityRowId(), ability: a.ability }));
     skillDraftRows = (p.skills || []).map((s) => ({ rowId: nextSkillRowId(), skill: s.skill }));
     relationshipDraftRows = (p.relationships || []).map((r) => ({ rowId: nextRelationshipRowId(), personId: r.personId, type: r.type }));
-    fatherEl.value = p.fatherId != null ? (personById(p.fatherId)?.name || '') : '';
-    motherEl.value = p.motherId != null ? (personById(p.motherId)?.name || '') : '';
+    initialFatherId = p.fatherId != null ? String(p.fatherId) : '';
+    initialMotherId = p.motherId != null ? String(p.motherId) : '';
     spouseDraftIds = (p.spouseIds || []).slice();
   } else {
     nameEl.value = ''; kanaEl.value = ''; youmeiEl.value = ''; maidenNameEl.value = '';
@@ -387,11 +426,12 @@ function openPersonForm(id) {
     abilityDraftRows = [];
     skillDraftRows = [];
     relationshipDraftRows = [];
-    fatherEl.value = '';
-    motherEl.value = '';
+    initialFatherId = '';
+    initialMotherId = '';
     spouseDraftIds = [];
   }
   renderPersonNameDatalist();
+  populatePersonFormSelects({ father: initialFatherId, mother: initialMotherId });
   summaryOriginalEventIds = summaryDraftRows.map((r) => r.eventId);
   document.getElementById('person-summary-add-year').value = '';
   document.getElementById('person-summary-add-month').value = '';
@@ -1016,10 +1056,10 @@ async function savePersonForm() {
   const relationships = relationshipDraftRows
     .filter((r) => r.personId != null && (r.type || '').trim())
     .map((r) => ({ personId: r.personId, type: r.type.trim() }));
-  const fatherNameVal = document.getElementById('person-form-father').value;
-  const motherNameVal = document.getElementById('person-form-mother').value;
-  const fatherId = await resolvePersonByName(fatherNameVal, editingPersonId);
-  const motherId = await resolvePersonByName(motherNameVal, editingPersonId);
+  const fatherVal = document.getElementById('person-form-father').value;
+  const motherVal = document.getElementById('person-form-mother').value;
+  const fatherId = fatherVal ? Number(fatherVal) : null;
+  const motherId = motherVal ? Number(motherVal) : null;
   const spouseIds = spouseDraftIds.slice();
   let personId = editingPersonId;
   let oldSpouseIds = [];
@@ -1756,6 +1796,20 @@ function wireForms() {
   document.getElementById('person-save-btn').addEventListener('click', savePersonForm);
   document.getElementById('event-save-btn').addEventListener('click', saveEventForm);
 
+  // プルダウンで「+ 新しい人物を作成...」を選んだ時、その場で名前を聞いて人物を作り選択状態にする
+  document.getElementById('person-form-father').addEventListener('change', async (e) => {
+    if (e.target.value !== NEW_PERSON_OPTION) return;
+    const name = (prompt('父の名前を入力してください') || '').trim();
+    const newId = name ? await resolvePersonByName(name, editingPersonId) : null;
+    populatePersonFormSelects({ father: newId != null ? String(newId) : '' });
+  });
+  document.getElementById('person-form-mother').addEventListener('change', async (e) => {
+    if (e.target.value !== NEW_PERSON_OPTION) return;
+    const name = (prompt('母の名前を入力してください') || '').trim();
+    const newId = name ? await resolvePersonByName(name, editingPersonId) : null;
+    populatePersonFormSelects({ mother: newId != null ? String(newId) : '' });
+  });
+
   document.getElementById('event-form-add-btn').addEventListener('click', () => {
     const sel = document.getElementById('event-form-add-person');
     const personId = Number(sel.value);
@@ -2054,16 +2108,15 @@ function wireForms() {
   });
 
   document.getElementById('person-relationship-add-btn').addEventListener('click', async () => {
-    const personNameEl = document.getElementById('person-relationship-add-person');
+    const personSelectEl = document.getElementById('person-relationship-add-person');
     const typeEl = document.getElementById('person-relationship-add-type');
-    const name = personNameEl.value.trim();
     const type = typeEl.value.trim();
-    if (!name || !type) return;
-    const pid = await resolvePersonByName(name, editingPersonId);
-    if (!pid || pid === editingPersonId) { personNameEl.value = ''; renderPersonNameDatalist(); return; }
-    if (relationshipDraftRows.some((r) => r.personId === pid && r.type === type)) { personNameEl.value = ''; typeEl.value = ''; return; }
+    if (!type) return;
+    const pid = await resolvePersonFromSelect(personSelectEl, '相手');
+    if (pid == null || pid === editingPersonId) { renderPersonNameDatalist(); return; }
+    if (relationshipDraftRows.some((r) => r.personId === pid && r.type === type)) { typeEl.value = ''; renderPersonNameDatalist(); return; }
     relationshipDraftRows.push({ rowId: nextRelationshipRowId(), personId: pid, type });
-    personNameEl.value = ''; typeEl.value = '';
+    typeEl.value = '';
     renderRelationshipList();
     renderPersonNameDatalist();
   });
@@ -2081,12 +2134,9 @@ function wireForms() {
   });
 
   document.getElementById('person-spouse-add-btn').addEventListener('click', async () => {
-    const input = document.getElementById('person-spouse-add');
-    const name = input.value.trim();
-    if (!name) return;
-    const pid = await resolvePersonByName(name, editingPersonId);
-    input.value = '';
-    if (!pid || pid === editingPersonId || spouseDraftIds.includes(pid)) { renderPersonNameDatalist(); return; }
+    const select = document.getElementById('person-spouse-add');
+    const pid = await resolvePersonFromSelect(select, '配偶者');
+    if (pid == null || pid === editingPersonId || spouseDraftIds.includes(pid)) { renderPersonNameDatalist(); return; }
     spouseDraftIds.push(pid);
     renderSpouseList();
     renderPersonNameDatalist();
