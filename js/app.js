@@ -22,6 +22,9 @@ let spouseDraftIds = [];
 let familyTreeFocusId = null;
 let treeDeleteMode = false;
 let personYearFocusId = null;
+// 人物・出来事の編集フォームで未保存の変更があるかどうか(離脱時に警告を出すため)
+let formDirty = false;
+const DIRTY_TRACKED_VIEWS = ['view-edit-person', 'view-edit-event'];
 
 const STATUS_LIST = ['生存', '死亡', '負傷', '不明'];
 const STATUS_CLASS = { 生存: 'alive', 死亡: 'dead', 負傷: 'injured', 不明: 'unknown' };
@@ -85,17 +88,30 @@ function applyView(viewId) {
   if (renderFn) renderFn();
 }
 
+// 編集フォームに未保存の変更がある状態でそこから離れようとした時だけ確認する
+function confirmLeaveDirtyForm() {
+  const current = navStack[navStack.length - 1];
+  if (!formDirty || !DIRTY_TRACKED_VIEWS.includes(current)) return true;
+  return confirm('保存されていない変更があります。このまま離れると変更は破棄されます。よろしいですか?');
+}
+
 function navigateTo(viewId) {
+  if (!confirmLeaveDirtyForm()) return;
+  formDirty = false;
   navStack.push(viewId);
   applyView(viewId);
 }
 
 function goBack() {
+  if (!confirmLeaveDirtyForm()) return;
+  formDirty = false;
   if (navStack.length > 1) navStack.pop();
   applyView(navStack[navStack.length - 1]);
 }
 
 function switchTab(viewId) {
+  if (!confirmLeaveDirtyForm()) return;
+  formDirty = false;
   navStack = [viewId];
   document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === viewId));
   applyView(viewId);
@@ -384,6 +400,7 @@ async function resolvePersonByName(name, excludeId) {
 }
 
 function openPersonForm(id) {
+  formDirty = false;
   editingPersonId = id;
   const nameEl = document.getElementById('person-form-name');
   const kanaEl = document.getElementById('person-form-kana');
@@ -462,6 +479,7 @@ function openPersonForm(id) {
 }
 
 function openEventForm(id, parentId) {
+  formDirty = false;
   editingEventId = id;
   const titleEl = document.getElementById('event-form-title');
   const categoryEl = document.getElementById('event-form-category');
@@ -1084,6 +1102,7 @@ async function savePersonForm() {
   await autoLinkParentsAsSpouses(fatherId, motherId);
   await syncSummaryRows(personId);
   await refreshAll();
+  formDirty = false;
   goBack();
 }
 
@@ -1191,6 +1210,7 @@ async function saveEventForm() {
     await syncDeathYearsFromParticipants({ year, participants: draftParticipants });
   }
   await refreshAll();
+  formDirty = false;
   goBack();
 }
 
@@ -1733,6 +1753,20 @@ function wireNav() {
     if (btn) switchTab(btn.dataset.tab);
   });
   document.querySelectorAll('[data-back]').forEach((btn) => btn.addEventListener('click', () => goBack()));
+  // 編集フォーム内の入力・ボタン操作を検知して「未保存の変更あり」をマークする(キャンセル/戻るボタン自身は除く)
+  const markFormDirty = (e) => { if (!e.target.closest('[data-back]')) formDirty = true; };
+  DIRTY_TRACKED_VIEWS.forEach((viewId) => {
+    const el = document.getElementById(viewId);
+    if (!el) return;
+    el.addEventListener('input', markFormDirty);
+    el.addEventListener('change', markFormDirty);
+    el.addEventListener('click', (e) => { if (e.target.closest('button')) markFormDirty(e); });
+  });
+  window.addEventListener('beforeunload', (e) => {
+    if (!formDirty) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
   document.querySelectorAll('[data-nav]').forEach((btn) => btn.addEventListener('click', () => {
     const target = btn.dataset.nav;
     if (btn.dataset.new === 'person') openPersonForm(null);
