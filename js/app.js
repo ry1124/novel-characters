@@ -341,7 +341,7 @@ async function resolvePersonFromSelect(selectEl, promptLabel) {
   const val = selectEl.value;
   if (!val) return null;
   if (val === NEW_PERSON_OPTION) {
-    const name = (prompt(`${promptLabel}の名前を入力してください`) || '').trim();
+    const name = ((await promptText(`${promptLabel}の名前を入力してください`)) || '').trim();
     if (!name) return null;
     return await resolvePersonByName(name, editingPersonId);
   }
@@ -992,6 +992,27 @@ function hideConfirm() {
   document.getElementById('confirm-sheet').classList.add('hidden');
 }
 
+// ===== 名前入力シート =====
+// iOSのホーム画面PWA(standalone)ではwindow.prompt()のテキスト欄にキーボードが出ないことがあるため、
+// 自前のシートで代替する。window.prompt()と同じ感覚で使えるようPromiseで名前(キャンセル時はnull)を返す
+let pendingPromptResolve = null;
+function promptText(label, defaultValue) {
+  return new Promise((resolve) => {
+    pendingPromptResolve = resolve;
+    document.getElementById('prompt-sheet-label').textContent = label;
+    const input = document.getElementById('prompt-sheet-input');
+    input.value = defaultValue || '';
+    document.getElementById('prompt-sheet').classList.remove('hidden');
+    setTimeout(() => input.focus(), 50);
+  });
+}
+function resolvePromptSheet(value) {
+  const resolve = pendingPromptResolve;
+  pendingPromptResolve = null;
+  document.getElementById('prompt-sheet').classList.add('hidden');
+  if (resolve) resolve(value);
+}
+
 // ===== 保存・削除処理 =====
 function clampYear(v) { return Math.min(3000, Math.max(0, Number(v) || 0)); }
 
@@ -1516,7 +1537,7 @@ function renderFamilyTree() {
 async function treeAddPerson(relation) {
   const focus = personById(familyTreeFocusId);
   if (!focus) return;
-  const name = (prompt('新しい人物の名前を入力してください') || '').trim();
+  const name = ((await promptText('新しい人物の名前を入力してください')) || '').trim();
   if (!name) return;
   const base = { name, kana: '', youmei: '', roles: [], affiliations: [], birthYear: null, deathYear: null, fatherId: null, motherId: null, adoptiveFatherId: null, adoptiveMotherId: null, spouseIds: [], createdAt: Date.now() };
 
@@ -1912,6 +1933,13 @@ function wireDetailActions() {
   document.getElementById('confirm-sheet-ok').addEventListener('click', () => { const fn = pendingConfirm; hideConfirm(); if (fn) fn(); });
   document.getElementById('confirm-sheet-cancel').addEventListener('click', hideConfirm);
   document.getElementById('confirm-sheet').addEventListener('click', (e) => { if (e.target.id === 'confirm-sheet') hideConfirm(); });
+
+  document.getElementById('prompt-sheet-ok').addEventListener('click', () => resolvePromptSheet(document.getElementById('prompt-sheet-input').value));
+  document.getElementById('prompt-sheet-cancel').addEventListener('click', () => resolvePromptSheet(null));
+  document.getElementById('prompt-sheet-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') resolvePromptSheet(e.target.value);
+  });
+  document.getElementById('prompt-sheet').addEventListener('click', (e) => { if (e.target.id === 'prompt-sheet') resolvePromptSheet(null); });
 }
 
 function wireForms() {
@@ -1921,13 +1949,13 @@ function wireForms() {
   // プルダウンで「+ 新しい人物を作成...」を選んだ時、その場で名前を聞いて人物を作り選択状態にする
   document.getElementById('person-form-father').addEventListener('change', async (e) => {
     if (e.target.value !== NEW_PERSON_OPTION) return;
-    const name = (prompt('父の名前を入力してください') || '').trim();
+    const name = ((await promptText('父の名前を入力してください')) || '').trim();
     const newId = name ? await resolvePersonByName(name, editingPersonId) : null;
     populatePersonFormSelects({ father: newId != null ? String(newId) : '' });
   });
   document.getElementById('person-form-mother').addEventListener('change', async (e) => {
     if (e.target.value !== NEW_PERSON_OPTION) return;
-    const name = (prompt('母の名前を入力してください') || '').trim();
+    const name = ((await promptText('母の名前を入力してください')) || '').trim();
     const newId = name ? await resolvePersonByName(name, editingPersonId) : null;
     populatePersonFormSelects({ mother: newId != null ? String(newId) : '' });
   });
@@ -1942,7 +1970,7 @@ function wireForms() {
   });
 
   document.getElementById('event-form-new-person-btn').addEventListener('click', async () => {
-    const name = (prompt('新しい人物の名前を入力してください') || '').trim();
+    const name = ((await promptText('新しい人物の名前を入力してください')) || '').trim();
     if (!name) return;
     const personId = await DB.addPerson({ name, kana: '', youmei: '', roles: [], birthYear: null, deathYear: null, createdAt: Date.now() });
     await refreshAll();

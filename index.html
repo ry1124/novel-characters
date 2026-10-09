@@ -507,6 +507,18 @@
     </div>
   </div>
 
+  <!-- ===== 名前入力シート(iOSのPWAでwindow.prompt()のキーボードが出ないことがあるため自前で用意) ===== -->
+  <div id="prompt-sheet" class="sheet-overlay hidden">
+    <div class="sheet">
+      <div class="sheet-list prompt-sheet-body">
+        <label id="prompt-sheet-label" for="prompt-sheet-input"></label>
+        <input type="text" id="prompt-sheet-input" autocomplete="off">
+      </div>
+      <div class="sheet-list"><button class="sheet-btn" id="prompt-sheet-ok">OK</button></div>
+      <div class="sheet-list"><button class="sheet-btn cancel" id="prompt-sheet-cancel">キャンセル</button></div>
+    </div>
+  </div>
+
   <nav class="tabbar" id="tabbar">
     <button class="tab-btn active" data-tab="view-search"><span class="tab-icon">🔎</span><span>検索</span></button>
     <button class="tab-btn" data-tab="view-people"><span class="tab-icon">🧑</span><span>人物</span></button>
