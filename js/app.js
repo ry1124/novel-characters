@@ -20,6 +20,7 @@ let mapDragging = null;
 let memoDetectedPersonIds = new Set();
 let spouseDraftIds = [];
 let familyTreeFocusId = null;
+let treeDeleteMode = false;
 let personYearFocusId = null;
 
 const STATUS_LIST = ['生存', '死亡', '負傷', '不明'];
@@ -1236,10 +1237,10 @@ function renderFamilyTree() {
   const adoptiveFather = p.adoptiveFatherId != null ? personById(p.adoptiveFatherId) : null;
   const adoptiveMother = p.adoptiveMotherId != null ? personById(p.adoptiveMotherId) : null;
   const parentEntries = [
-    father ? { person: father, label: '父' } : null,
-    adoptiveFather ? { person: adoptiveFather, label: '養父' } : null,
-    mother ? { person: mother, label: '母' } : null,
-    adoptiveMother ? { person: adoptiveMother, label: '養母' } : null,
+    father ? { person: father, label: '父', rel: 'father' } : null,
+    adoptiveFather ? { person: adoptiveFather, label: '養父', rel: 'adoptiveFather' } : null,
+    mother ? { person: mother, label: '母', rel: 'mother' } : null,
+    adoptiveMother ? { person: adoptiveMother, label: '養母', rel: 'adoptiveMother' } : null,
   ].filter(Boolean);
 
   // 兄弟姉妹は、実親・養親のいずれかを1人でも共有していれば検出する(全血/異母/異父/養子同士も含む)
@@ -1289,14 +1290,26 @@ function renderFamilyTree() {
   svg.style.width = (width * 320 / 400) + 'px';
   svg.innerHTML = '';
   const LINE = '#b9b0d6';
+  // 養子関係は実線2本("＝"風の二重線)、血縁は実線1本で見分けられるようにする
+  const drawConnector = (x1, y1, x2, y2, isAdoptive) => {
+    if (isAdoptive) {
+      svg.appendChild(svgEl('line', { x1: x1 - 1.5, y1, x2: x2 - 1.5, y2, stroke: LINE, 'stroke-width': 1.5 }));
+      svg.appendChild(svgEl('line', { x1: x1 + 1.5, y1, x2: x2 + 1.5, y2, stroke: LINE, 'stroke-width': 1.5 }));
+    } else {
+      svg.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: LINE, 'stroke-width': 2 }));
+    }
+  };
 
   const selfPeopleBoxes = midBoxes.slice(0, selfRowPeople.length);
   if (parentsBoxes.length && selfPeopleBoxes.length) {
-    const parentMidX = (parentsBoxes[0].cx + parentsBoxes[parentsBoxes.length - 1].cx) / 2;
     const parentBottomY = rowY.parents + TREE_BOX_H;
     const busY = (parentBottomY + rowY.mid) / 2;
-    svg.appendChild(svgEl('line', { x1: parentMidX, y1: parentBottomY, x2: parentMidX, y2: busY, stroke: LINE, 'stroke-width': 2 }));
-    const left = selfPeopleBoxes[0].cx, right = selfPeopleBoxes[selfPeopleBoxes.length - 1].cx;
+    parentsBoxes.forEach((b, i) => {
+      const isAdoptive = parentEntries[i].rel === 'adoptiveFather' || parentEntries[i].rel === 'adoptiveMother';
+      drawConnector(b.cx, parentBottomY, b.cx, busY, isAdoptive);
+    });
+    const busX = parentsBoxes.map((b) => b.cx).concat(selfPeopleBoxes.map((b) => b.cx));
+    const left = Math.min(...busX), right = Math.max(...busX);
     svg.appendChild(svgEl('line', { x1: left, y1: busY, x2: right, y2: busY, stroke: LINE, 'stroke-width': 2 }));
     selfPeopleBoxes.forEach((b) => svg.appendChild(svgEl('line', { x1: b.cx, y1: busY, x2: b.cx, y2: rowY.mid, stroke: LINE, 'stroke-width': 2 })));
   }
@@ -1315,11 +1328,14 @@ function renderFamilyTree() {
     svg.appendChild(svgEl('line', { x1: childParentCx, y1: parentBottomY2, x2: childParentCx, y2: busY2, stroke: LINE, 'stroke-width': 2 }));
     const left = childrenBoxes[0].cx, right = childrenBoxes[childrenBoxes.length - 1].cx;
     svg.appendChild(svgEl('line', { x1: left, y1: busY2, x2: right, y2: busY2, stroke: LINE, 'stroke-width': 2 }));
-    childrenBoxes.forEach((b) => svg.appendChild(svgEl('line', { x1: b.cx, y1: busY2, x2: b.cx, y2: rowY.children, stroke: LINE, 'stroke-width': 2 })));
+    childrenBoxes.forEach((b) => {
+      const isAdopted = adoptedChildren.some((c) => c.id === b.person.id);
+      drawConnector(b.cx, busY2, b.cx, rowY.children, isAdopted);
+    });
   }
 
-  const drawBox = (b, isSelf, subLabel) => {
-    const g = svgEl('g', { 'data-tree-person': b.person.id, style: 'cursor:pointer' });
+  const drawBox = (b, isSelf, subLabel, relation) => {
+    const g = svgEl('g', { 'data-tree-person': b.person.id, 'data-tree-relation': relation, style: 'cursor:pointer' });
     g.appendChild(svgEl('rect', {
       x: b.x, y: b.y, width: TREE_BOX_W, height: TREE_BOX_H, rx: 8,
       fill: isSelf ? '#5b37b7' : '#ece8f6', stroke: isSelf ? '#5b37b7' : '#d8d0ef', 'stroke-width': 1.5,
@@ -1341,14 +1357,18 @@ function renderFamilyTree() {
     svg.appendChild(g);
   };
 
-  parentsBoxes.forEach((b, i) => drawBox(b, false, parentEntries[i].label));
+  parentsBoxes.forEach((b, i) => drawBox(b, false, parentEntries[i].label, parentEntries[i].rel));
   midBoxes.forEach((b, i) => {
-    if (i < selfRowPeople.length) drawBox(b, b.person.id === p.id, b.person.id === p.id ? '' : '兄弟姉妹');
-    else drawBox(b, false, '配偶者');
+    if (i < selfRowPeople.length) {
+      const isSelf = b.person.id === p.id;
+      drawBox(b, isSelf, isSelf ? '' : '兄弟姉妹', isSelf ? 'self' : 'sibling');
+    } else {
+      drawBox(b, false, '配偶者', 'spouse');
+    }
   });
   childrenBoxes.forEach((b) => {
     const isAdopted = adoptedChildren.some((c) => c.id === b.person.id);
-    drawBox(b, false, isAdopted ? '養子' : '');
+    drawBox(b, false, isAdopted ? '養子' : '', isAdopted ? 'adoptedChild' : 'child');
   });
 }
 
@@ -1390,6 +1410,47 @@ async function treeAddPerson(relation) {
       ? { ...base, adoptiveFatherId: asFather ? focus.id : null, adoptiveMotherId: asFather ? null : focus.id }
       : { ...base, fatherId: asFather ? focus.id : null, motherId: asFather ? null : focus.id };
     await DB.addPerson(childData);
+  }
+  await refreshAll();
+  renderFamilyTree();
+}
+
+// 家系図の削除モードで人物ボックスをタップした時、本人からその関係を解除する
+async function treeDeleteRelation(personId, relation) {
+  const focus = personById(familyTreeFocusId);
+  if (!focus) return;
+  if (relation === 'self') return; // 本人は人物の削除画面からのみ消せる
+  if (relation === 'sibling') {
+    alert('兄弟姉妹は共有している父・母の設定を変えないと解除できません(人物の編集画面から行ってください)');
+    return;
+  }
+  const target = personById(personId);
+  const name = target ? target.name : '?';
+  const labelMap = {
+    father: '父', mother: '母', adoptiveFather: '養父', adoptiveMother: '養母',
+    spouse: '配偶者', child: '子', adoptedChild: '養子',
+  };
+  if (!confirm(`「${name}」との関係(${labelMap[relation] || relation})を解除しますか?\n(人物自体は削除されません)`)) return;
+
+  if (relation === 'father') { focus.fatherId = null; await DB.updatePerson(focus); }
+  else if (relation === 'mother') { focus.motherId = null; await DB.updatePerson(focus); }
+  else if (relation === 'adoptiveFather') { focus.adoptiveFatherId = null; await DB.updatePerson(focus); }
+  else if (relation === 'adoptiveMother') { focus.adoptiveMotherId = null; await DB.updatePerson(focus); }
+  else if (relation === 'spouse') {
+    focus.spouseIds = (focus.spouseIds || []).filter((id) => id !== personId);
+    await DB.updatePerson(focus);
+    if (target) {
+      target.spouseIds = (target.spouseIds || []).filter((id) => id !== focus.id);
+      await DB.updatePerson(target);
+    }
+  } else if (relation === 'child' && target) {
+    if (target.fatherId === focus.id) target.fatherId = null;
+    if (target.motherId === focus.id) target.motherId = null;
+    await DB.updatePerson(target);
+  } else if (relation === 'adoptedChild' && target) {
+    if (target.adoptiveFatherId === focus.id) target.adoptiveFatherId = null;
+    if (target.adoptiveMotherId === focus.id) target.adoptiveMotherId = null;
+    await DB.updatePerson(target);
   }
   await refreshAll();
   renderFamilyTree();
@@ -1665,11 +1726,23 @@ function wireDetailActions() {
   document.getElementById('person-tree-btn').addEventListener('click', () => { familyTreeFocusId = currentPersonId; navigateTo('view-family-tree'); });
   document.getElementById('person-year-btn').addEventListener('click', () => openPersonYearView(currentPersonId));
   document.getElementById('tree-edit-btn').addEventListener('click', () => openPersonForm(familyTreeFocusId));
+  document.getElementById('tree-delete-toggle').addEventListener('click', (e) => {
+    treeDeleteMode = !treeDeleteMode;
+    e.currentTarget.classList.toggle('active', treeDeleteMode);
+    document.getElementById('tree-delete-hint').style.display = treeDeleteMode ? '' : 'none';
+  });
   document.getElementById('view-family-tree').addEventListener('click', (e) => {
     const addBtn = e.target.closest('[data-tree-add]');
     if (addBtn) { treeAddPerson(addBtn.dataset.treeAdd); return; }
     const box = e.target.closest('[data-tree-person]');
     if (!box) return;
+    if (treeDeleteMode) {
+      treeDeleteMode = false;
+      document.getElementById('tree-delete-toggle').classList.remove('active');
+      document.getElementById('tree-delete-hint').style.display = 'none';
+      treeDeleteRelation(Number(box.dataset.treePerson), box.dataset.treeRelation);
+      return;
+    }
     familyTreeFocusId = Number(box.dataset.treePerson);
     renderFamilyTree();
   });

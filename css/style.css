@@ -251,6 +251,7 @@ html, body {
 .map-toolbar { display: flex; gap: 8px; padding: 8px 16px; flex-wrap: wrap; }
 .map-tool-btn { padding: 8px 14px; border-radius: 10px; background: var(--surface2); color: var(--text); border: none; font-size: 13px; cursor: pointer; }
 .map-tool-btn.active { background: var(--accent); color: #fff; }
+#tree-delete-toggle.active { background: var(--danger); color: #fff; }
 .map-canvas-wrap { padding: 0 16px; }
 .map-canvas { width: 100%; aspect-ratio: 4 / 3; background: #dfe8d8; border-radius: 12px; }
 #map-svg { touch-action: none; }
