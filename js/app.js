@@ -400,6 +400,7 @@ function renderPersonDetail() {
     </li>`).join('');
   document.getElementById('person-affiliations').textContent = (p.affiliations || []).map((a) => `${a.affiliation}(${formatRolePeriod(a)})`).join('、');
   document.getElementById('person-years').textContent = formatPersonYears(p);
+  renderPersonYearSelect(p);
 
   const death = getDeathInfo(p.id);
   const banner = document.getElementById('person-death-banner');
@@ -987,6 +988,112 @@ async function treeAddPerson(relation) {
   renderFamilyTree();
 }
 
+// ===== 年代検索(その年に何が起きていて、誰が何をしていたか) =====
+function yearWithinEvent(ev, year) {
+  const end = ev.endYear != null ? ev.endYear : ev.year;
+  return year >= ev.year && year <= end;
+}
+
+// 生年・没年(手入力/出来事どちらか)から、その年にまだ生まれていない・すでに死亡している人物を除外する。
+// 情報が無い場合は「否定できない」として表示対象に含める
+function personRelevantAtYear(p, year) {
+  if (p.birthYear != null && p.birthYear > year) return false;
+  if (p.deathYear != null && p.deathYear < year) return false;
+  const death = getDeathInfo(p.id);
+  if (death && eventTimeKey(death) < year * 100) return false;
+  return true;
+}
+
+function activePeriodItems(list, key, year) {
+  return (list || []).filter((r) => (r.startYear ?? -Infinity) <= year && (r.endYear ?? Infinity) >= year).map((r) => r[key]);
+}
+
+// 人物詳細の「年代で見る」: 生年を起点に、役職・所属・参加した出来事から分かる最後の年までをプルダウンの範囲にする
+function personYearRange(p) {
+  const min = p.birthYear ?? 0;
+  const candidates = [];
+  if (p.deathYear != null) candidates.push(p.deathYear);
+  (p.roles || []).forEach((r) => { if (r.startYear != null) candidates.push(r.startYear); if (r.endYear != null) candidates.push(r.endYear); });
+  (p.affiliations || []).forEach((a) => { if (a.startYear != null) candidates.push(a.startYear); if (a.endYear != null) candidates.push(a.endYear); });
+  events.filter((ev) => (ev.participants || []).some((pt) => pt.personId === p.id)).forEach((ev) => {
+    candidates.push(ev.year);
+    if (ev.endYear != null) candidates.push(ev.endYear);
+  });
+  const max = candidates.length ? Math.max(...candidates, min) : min + 100;
+  return { min, max: Math.min(Math.max(max, min), 3000) };
+}
+
+function renderPersonYearSelect(p) {
+  const sel = document.getElementById('person-year-select');
+  const { min, max } = personYearRange(p);
+  let opts = '<option value="">年を選択</option>';
+  for (let y = min; y <= max; y++) opts += `<option value="${y}">${y}年</option>`;
+  sel.innerHTML = opts;
+  sel.value = '';
+  document.getElementById('person-year-result').innerHTML = '';
+}
+
+function renderPersonYearResult(p, yearVal) {
+  const resultEl = document.getElementById('person-year-result');
+  if (yearVal === '' || yearVal == null) { resultEl.innerHTML = ''; return; }
+  const year = Number(yearVal);
+  const age = personAgeAt(p, year);
+  const activeRoles = activePeriodItems(p.roles, 'role', year);
+  const activeAffiliations = activePeriodItems(p.affiliations, 'affiliation', year);
+  const yearEvents = events.filter((ev) => (ev.participants || []).some((pt) => pt.personId === p.id) && yearWithinEvent(ev, year))
+    .sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
+  const subParts = [age !== null ? `${age}歳` : '', activeRoles.join('・'), activeAffiliations.join('・')].filter(Boolean);
+  resultEl.innerHTML = `
+    <div class="detail-sub">${escapeHtml(subParts.join(' ・ ') || 'この年についての情報はありません')}</div>
+    <ul class="timeline" style="padding:0;">
+      ${yearEvents.map((ev) => `<li class="timeline-item" data-event-id="${ev.id}">
+        <div class="timeline-year">${formatEventTime(ev)}</div>
+        <div class="timeline-body"><div class="timeline-title">${escapeHtml(ev.title)}</div></div>
+      </li>`).join('')}
+    </ul>`;
+}
+
+function renderYearLookup() {
+  const val = document.getElementById('year-lookup-input').value;
+  const eventsListEl = document.getElementById('year-lookup-events');
+  const eventsEmptyEl = document.getElementById('year-lookup-events-empty');
+  const peopleListEl = document.getElementById('year-lookup-people');
+  if (val === '') {
+    eventsListEl.innerHTML = '';
+    eventsEmptyEl.classList.remove('hidden');
+    eventsEmptyEl.textContent = '年を入力すると、その年の出来事と人物の様子が見られます';
+    peopleListEl.innerHTML = '';
+    return;
+  }
+  const year = clampYear(val);
+
+  const yearEvents = events.filter((ev) => yearWithinEvent(ev, year)).sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
+  if (!yearEvents.length) {
+    eventsListEl.innerHTML = '';
+    eventsEmptyEl.classList.remove('hidden');
+    eventsEmptyEl.textContent = `${year}年の出来事は登録されていません`;
+  } else {
+    eventsEmptyEl.classList.add('hidden');
+    eventsListEl.innerHTML = yearEvents.map((ev) => eventListItemHtml(ev, ev.parentEventId != null)).join('');
+  }
+
+  const relevant = people.filter((p) => personRelevantAtYear(p, year))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
+  peopleListEl.innerHTML = relevant.length ? relevant.map((p) => {
+    const age = personAgeAt(p, year);
+    const activeRoles = activePeriodItems(p.roles, 'role', year);
+    const activeAffiliations = activePeriodItems(p.affiliations, 'affiliation', year);
+    const subParts = [age !== null ? `${age}歳` : '', activeRoles.join('・'), activeAffiliations.join('・')].filter(Boolean);
+    return `<li class="list-item" data-person-id="${p.id}">
+      <div class="list-item-main">
+        <div class="list-item-title">${escapeHtml(p.name)}</div>
+        <div class="list-item-sub">${escapeHtml(subParts.join(' ・ ') || '情報なし')}</div>
+      </div>
+      <span class="list-item-chevron">›</span>
+    </li>`;
+  }).join('') : '<li class="empty-state">該当する人物が見つかりません</li>';
+}
+
 const RENDER_FNS = {
   'view-search': renderSearch,
   'view-people': renderPeople,
@@ -996,6 +1103,7 @@ const RENDER_FNS = {
   'view-event-map-editor': openMapEditor,
   'view-memo-import': openMemoImport,
   'view-family-tree': renderFamilyTree,
+  'view-year-lookup': renderYearLookup,
 };
 
 function wireNav() {
@@ -1015,6 +1123,7 @@ function wireNav() {
 function wireLists() {
   document.getElementById('search-input').addEventListener('input', renderSearch);
   document.getElementById('events-search-input').addEventListener('input', renderEvents);
+  document.getElementById('year-lookup-input').addEventListener('input', renderYearLookup);
 
   document.querySelectorAll('#view-people .filter-chips').forEach((bar) => bar.addEventListener('click', (e) => {
     const chip = e.target.closest('[data-sort]');
@@ -1035,11 +1144,21 @@ function wireLists() {
   delegate('events-list', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
   delegate('event-children-list', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
   delegate('person-timeline', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
+  delegate('year-lookup-events', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
+  delegate('year-lookup-people', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
 }
 
 function wireDetailActions() {
   document.getElementById('person-edit-btn').addEventListener('click', () => openPersonForm(currentPersonId));
   document.getElementById('person-delete-btn').addEventListener('click', () => askConfirm(() => deletePerson(currentPersonId)));
+  document.getElementById('person-year-select').addEventListener('change', (e) => {
+    const p = personById(currentPersonId);
+    if (p) renderPersonYearResult(p, e.target.value);
+  });
+  document.getElementById('person-year-result').addEventListener('click', (e) => {
+    const el = e.target.closest('[data-event-id]');
+    if (el) openEventDetail(Number(el.dataset.eventId));
+  });
   document.getElementById('event-edit-btn').addEventListener('click', () => openEventForm(currentEventId));
   document.getElementById('event-delete-btn').addEventListener('click', () => askConfirm(() => deleteEvent(currentEventId)));
   document.getElementById('event-map-btn').addEventListener('click', () => { mapEditingEventId = currentEventId; navigateTo('view-event-map-editor'); });

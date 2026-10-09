@@ -60,6 +60,9 @@
     <div class="detail-actions"><button class="btn-secondary" id="person-tree-btn">家系図を見る</button></div>
     <div class="section-label">役職</div>
     <ul id="person-roles-timeline" class="timeline"></ul>
+    <div class="section-label">年代で見る</div>
+    <div class="search-bar"><select id="person-year-select"></select></div>
+    <div id="person-year-result"></div>
     <div class="section-label">経歴年表</div>
     <ul id="person-timeline" class="timeline"></ul>
     <div id="person-timeline-empty" class="empty-state">この人物が参加した出来事はまだありません</div>
@@ -310,6 +313,19 @@
     </div>
   </section>
 
+  <!-- ===== 年代検索 ===== -->
+  <section id="view-year-lookup" class="view">
+    <div class="topbar">
+      <h1>年代</h1>
+    </div>
+    <div class="search-bar"><input id="year-lookup-input" type="number" min="0" max="3000" placeholder="年を入力(例: 503)"></div>
+    <div class="section-label">この年の出来事</div>
+    <ul id="year-lookup-events" class="list"></ul>
+    <div id="year-lookup-events-empty" class="empty-state">年を入力すると、その年の出来事と人物の様子が見られます</div>
+    <div class="section-label">この年の人物</div>
+    <ul id="year-lookup-people" class="list"></ul>
+  </section>
+
   <!-- ===== 設定 ===== -->
   <section id="view-settings" class="view">
     <div class="topbar">
@@ -344,6 +360,7 @@
     <button class="tab-btn active" data-tab="view-search"><span class="tab-icon">🔎</span><span>検索</span></button>
     <button class="tab-btn" data-tab="view-people"><span class="tab-icon">🧑</span><span>人物</span></button>
     <button class="tab-btn" data-tab="view-events"><span class="tab-icon">📜</span><span>出来事</span></button>
+    <button class="tab-btn" data-tab="view-year-lookup"><span class="tab-icon">📅</span><span>年代</span></button>
   </nav>
 
 </div>
