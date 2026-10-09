@@ -226,6 +226,24 @@ function renderSkillList() {
     </li>`).join('');
 }
 
+// ===== 人物フォーム: 人間関係(血縁以外、複数)編集 =====
+// 家族(father/mother/spouse)とは別に、師弟・友好・敵対など自由な関係を記録する
+let relationshipDraftRows = [];
+let relationshipRowSeq = 0;
+function nextRelationshipRowId() { return 'relationship' + (relationshipRowSeq++); }
+
+function renderRelationshipList() {
+  const listEl = document.getElementById('person-relationship-list');
+  listEl.innerHTML = relationshipDraftRows.map((row) => {
+    const p = personById(row.personId);
+    return `<li class="participant-row summary-row" data-row-id="${row.rowId}">
+      <div class="list-item-main">${escapeHtml(p ? p.name : '?')}</div>
+      <input class="prl-type" type="text" value="${escapeHtml(row.type || '')}" placeholder="関係" list="relationship-type-datalist">
+      <button type="button" class="remove-btn" data-remove-relationship="${row.rowId}">×</button>
+    </li>`;
+  }).join('');
+}
+
 // ===== 人物フォーム: 配偶者(複数)編集 =====
 function renderSpouseList() {
   const listEl = document.getElementById('person-spouse-list');
@@ -353,6 +371,7 @@ function openPersonForm(id) {
     medalDraftRows = (p.medals || []).map((m) => ({ rowId: nextMedalRowId(), medal: m.medal, startYear: m.startYear }));
     abilityDraftRows = (p.abilities || []).map((a) => ({ rowId: nextAbilityRowId(), ability: a.ability }));
     skillDraftRows = (p.skills || []).map((s) => ({ rowId: nextSkillRowId(), skill: s.skill }));
+    relationshipDraftRows = (p.relationships || []).map((r) => ({ rowId: nextRelationshipRowId(), personId: r.personId, type: r.type }));
     fatherEl.value = p.fatherId != null ? (personById(p.fatherId)?.name || '') : '';
     motherEl.value = p.motherId != null ? (personById(p.motherId)?.name || '') : '';
     spouseDraftIds = (p.spouseIds || []).slice();
@@ -366,6 +385,7 @@ function openPersonForm(id) {
     medalDraftRows = [];
     abilityDraftRows = [];
     skillDraftRows = [];
+    relationshipDraftRows = [];
     fatherEl.value = '';
     motherEl.value = '';
     spouseDraftIds = [];
@@ -393,6 +413,7 @@ function openPersonForm(id) {
   renderMedalList();
   renderAbilityList();
   renderSkillList();
+  renderRelationshipList();
   renderSpouseList();
   renderChildrenSection();
   navigateTo('view-edit-person');
@@ -493,6 +514,10 @@ function renderPersonDetail() {
       <div class="timeline-year">${formatRolePeriod(r)}</div>
       <div class="timeline-body"><div class="timeline-title">${escapeHtml(r.role)}</div></div>
     </li>`).join('');
+  document.getElementById('person-relationships').innerHTML = (p.relationships || []).map((r) => {
+    const rp = personById(r.personId);
+    return `<span class="chip-link" data-person-id="${r.personId}">${escapeHtml(r.type)}: ${escapeHtml(rp ? rp.name : '?')}</span>`;
+  }).join('');
   document.getElementById('person-affiliations').textContent = (p.affiliations || []).map((a) => `${a.affiliation}(${formatRolePeriod(a)})`).join('、');
   document.getElementById('person-qualifications').textContent = (p.qualifications || []).map((q) => `${q.qualification}(${formatRolePeriod(q)})`).join('、');
   document.getElementById('person-medals').textContent = (p.medals || []).map((m) => `${m.medal}${m.startYear != null ? `(${m.startYear}年)` : ''}`).join('、');
@@ -672,6 +697,62 @@ function renderBulkRolePersonList() {
   const sorted = filtered.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
   listEl.innerHTML = sorted.map((p) => `<li class="list-item list-item-check" data-person-id="${p.id}">
       <input type="checkbox" class="bulk-role-check" data-person-id="${p.id}" ${bulkRoleCheckedIds.has(p.id) ? 'checked' : ''}>
+      <div class="list-item-main"><div class="list-item-title">${escapeHtml(p.name)}</div></div>
+    </li>`).join('');
+}
+
+// ===== 組織一覧(人物を横断して、所属名ごとにグループ表示) =====
+function renderOrganizations() {
+  const q = (document.getElementById('organizations-search-input').value || '').trim().toLowerCase();
+  const groups = new Map();
+  people.forEach((p) => (p.affiliations || []).forEach((a) => {
+    if (!a.affiliation) return;
+    if (!groups.has(a.affiliation)) groups.set(a.affiliation, []);
+    groups.get(a.affiliation).push({ person: p, startYear: a.startYear, endYear: a.endYear });
+  }));
+  const hadAny = groups.size > 0;
+  let names = [...groups.keys()];
+  if (q) names = names.filter((n) => n.toLowerCase().includes(q));
+  names.sort((a, b) => a.localeCompare(b, 'ja'));
+  const emptyEl = document.getElementById('organizations-empty');
+  const listEl = document.getElementById('organizations-list');
+  if (!names.length) {
+    listEl.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+    emptyEl.textContent = hadAny ? '該当する組織が見つかりません' : 'まだ所属が登録されていません';
+    return;
+  }
+  emptyEl.classList.add('hidden');
+  listEl.innerHTML = names.map((name) => {
+    const rows = groups.get(name).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+    const rowsHtml = rows.map((row) => `<li class="list-item list-item-indent" data-person-id="${row.person.id}">
+        <div class="list-item-main">
+          <div class="list-item-title">${escapeHtml(row.person.name)}</div>
+          <div class="list-item-sub">${formatRolePeriod(row)}</div>
+        </div>
+        <span class="list-item-chevron">›</span>
+      </li>`).join('');
+    return `<li class="list-group-header">${escapeHtml(name)}(${rows.length}人)</li>${rowsHtml}`;
+  }).join('');
+}
+
+// ===== 組織の一括追加: 1つの組織を、複数人物にまとめて付与する =====
+let bulkAffiliationCheckedIds = new Set();
+function openBulkAffiliationForm() {
+  document.getElementById('bulk-affiliation-name').value = '';
+  document.getElementById('bulk-affiliation-start').value = '';
+  document.getElementById('bulk-affiliation-end').value = '';
+  document.getElementById('bulk-affiliation-person-search').value = '';
+  bulkAffiliationCheckedIds = new Set();
+  renderBulkAffiliationPersonList();
+}
+function renderBulkAffiliationPersonList() {
+  const q = (document.getElementById('bulk-affiliation-person-search').value || '').trim().toLowerCase();
+  const listEl = document.getElementById('bulk-affiliation-person-list');
+  const filtered = q ? people.filter((p) => (p.name || '').toLowerCase().includes(q)) : people;
+  const sorted = filtered.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
+  listEl.innerHTML = sorted.map((p) => `<li class="list-item list-item-check" data-person-id="${p.id}">
+      <input type="checkbox" class="bulk-affiliation-check" data-person-id="${p.id}" ${bulkAffiliationCheckedIds.has(p.id) ? 'checked' : ''}>
       <div class="list-item-main"><div class="list-item-title">${escapeHtml(p.name)}</div></div>
     </li>`).join('');
 }
@@ -931,6 +1012,9 @@ async function savePersonForm() {
   const skills = skillDraftRows
     .filter((s) => (s.skill || '').trim())
     .map((s) => ({ skill: s.skill.trim() }));
+  const relationships = relationshipDraftRows
+    .filter((r) => r.personId != null && (r.type || '').trim())
+    .map((r) => ({ personId: r.personId, type: r.type.trim() }));
   const fatherNameVal = document.getElementById('person-form-father').value;
   const motherNameVal = document.getElementById('person-form-mother').value;
   const fatherId = await resolvePersonByName(fatherNameVal, editingPersonId);
@@ -943,14 +1027,14 @@ async function savePersonForm() {
     oldSpouseIds = p.spouseIds || [];
     p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
     p.roles = roles; p.affiliations = affiliations; p.qualifications = qualifications; p.medals = medals;
-    p.abilities = abilities; p.skills = skills;
+    p.abilities = abilities; p.skills = skills; p.relationships = relationships;
     p.birthYear = birthYear; p.deathYear = deathYear;
     p.fatherId = fatherId; p.motherId = motherId; p.spouseIds = spouseIds;
     await DB.updatePerson(p);
   } else {
     personId = await DB.addPerson({
       name, kana, youmei, maidenName, genpukuYear, genpukuMonth, roles, affiliations, qualifications, medals,
-      abilities, skills, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now(),
+      abilities, skills, relationships, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now(),
     });
     currentPersonId = personId;
   }
@@ -996,6 +1080,10 @@ async function deletePerson(id) {
     if (other.adoptiveFatherId === id) { other.adoptiveFatherId = null; changed = true; }
     if (other.adoptiveMotherId === id) { other.adoptiveMotherId = null; changed = true; }
     if ((other.spouseIds || []).includes(id)) { other.spouseIds = other.spouseIds.filter((x) => x !== id); changed = true; }
+    if ((other.relationships || []).some((r) => r.personId === id)) {
+      other.relationships = other.relationships.filter((r) => r.personId !== id);
+      changed = true;
+    }
     if (changed) await DB.updatePerson(other);
   }
   await DB.deletePerson(id);
@@ -1440,6 +1528,8 @@ const RENDER_FNS = {
   'view-person-year': renderPersonYearView,
   'view-roles': renderRoles,
   'view-bulk-role': openBulkRoleForm,
+  'view-organizations': renderOrganizations,
+  'view-bulk-affiliation': openBulkAffiliationForm,
 };
 
 function wireNav() {
@@ -1491,6 +1581,8 @@ function wireLists() {
   delegate('year-lookup-events', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
   delegate('year-lookup-people', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
   delegate('roles-list', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
+  delegate('person-relationships', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
+  delegate('organizations-list', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
 
   document.getElementById('roles-search-input').addEventListener('input', renderRoles);
   document.getElementById('bulk-role-person-search').addEventListener('input', renderBulkRolePersonList);
@@ -1514,6 +1606,34 @@ function wireLists() {
       const p = personById(pid);
       if (!p) continue;
       p.roles = [...(p.roles || []), { role, startYear, endYear }];
+      await DB.updatePerson(p);
+    }
+    await refreshAll();
+    goBack();
+  });
+
+  document.getElementById('organizations-search-input').addEventListener('input', renderOrganizations);
+  document.getElementById('bulk-affiliation-person-search').addEventListener('input', renderBulkAffiliationPersonList);
+  document.getElementById('bulk-affiliation-person-list').addEventListener('click', (e) => {
+    const row = e.target.closest('.list-item-check');
+    if (!row) return;
+    const pid = Number(row.dataset.personId);
+    const checkbox = row.querySelector('.bulk-affiliation-check');
+    if (e.target !== checkbox) checkbox.checked = !checkbox.checked;
+    if (checkbox.checked) bulkAffiliationCheckedIds.add(pid); else bulkAffiliationCheckedIds.delete(pid);
+  });
+  document.getElementById('bulk-affiliation-save-btn').addEventListener('click', async () => {
+    const affiliation = document.getElementById('bulk-affiliation-name').value.trim();
+    if (!affiliation) { alert('組織名を入力してください'); return; }
+    if (!bulkAffiliationCheckedIds.size) { alert('対象の人物を選んでください'); return; }
+    const startVal = document.getElementById('bulk-affiliation-start').value;
+    const endVal = document.getElementById('bulk-affiliation-end').value;
+    const startYear = startVal ? clampYear(startVal) : null;
+    const endYear = endVal ? clampYear(endVal) : null;
+    for (const pid of bulkAffiliationCheckedIds) {
+      const p = personById(pid);
+      if (!p) continue;
+      p.affiliations = [...(p.affiliations || []), { affiliation, startYear, endYear }];
       await DB.updatePerson(p);
     }
     await refreshAll();
@@ -1852,6 +1972,33 @@ function wireForms() {
     if (!btn) return;
     skillDraftRows = skillDraftRows.filter((s) => s.rowId !== btn.dataset.removeSkill);
     renderSkillList();
+  });
+
+  document.getElementById('person-relationship-add-btn').addEventListener('click', async () => {
+    const personNameEl = document.getElementById('person-relationship-add-person');
+    const typeEl = document.getElementById('person-relationship-add-type');
+    const name = personNameEl.value.trim();
+    const type = typeEl.value.trim();
+    if (!name || !type) return;
+    const pid = await resolvePersonByName(name, editingPersonId);
+    if (!pid || pid === editingPersonId) { personNameEl.value = ''; renderPersonNameDatalist(); return; }
+    if (relationshipDraftRows.some((r) => r.personId === pid && r.type === type)) { personNameEl.value = ''; typeEl.value = ''; return; }
+    relationshipDraftRows.push({ rowId: nextRelationshipRowId(), personId: pid, type });
+    personNameEl.value = ''; typeEl.value = '';
+    renderRelationshipList();
+    renderPersonNameDatalist();
+  });
+  document.getElementById('person-relationship-list').addEventListener('input', (e) => {
+    const row = e.target.closest('.summary-row');
+    if (!row) return;
+    const draft = relationshipDraftRows.find((r) => r.rowId === row.dataset.rowId);
+    if (draft && e.target.classList.contains('prl-type')) draft.type = e.target.value;
+  });
+  document.getElementById('person-relationship-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-relationship]');
+    if (!btn) return;
+    relationshipDraftRows = relationshipDraftRows.filter((r) => r.rowId !== btn.dataset.removeRelationship);
+    renderRelationshipList();
   });
 
   document.getElementById('person-spouse-add-btn').addEventListener('click', async () => {

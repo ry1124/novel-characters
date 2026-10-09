@@ -67,6 +67,8 @@
     </div>
     <div class="section-label">役職</div>
     <ul id="person-roles-timeline" class="timeline"></ul>
+    <div class="section-label">人間関係</div>
+    <div id="person-relationships" style="padding:0 16px 8px;"></div>
     <div class="section-label">経歴年表</div>
     <ul id="person-timeline" class="timeline"></ul>
     <div id="person-timeline-empty" class="empty-state">この人物が参加した出来事はまだありません</div>
@@ -296,6 +298,28 @@
         <button class="btn-secondary" id="person-adopted-child-add-btn" type="button">+ 養子を追加</button>
       </div>
 
+      <div class="section-label" style="padding-left:0;">人間関係(血縁以外)</div>
+      <div class="form-note">師弟・友好・敵対など、家族以外の関係を記録できます</div>
+      <ul id="person-relationship-list" class="list" style="padding:0;"></ul>
+      <div class="form-row">
+        <label>関係を追加</label>
+        <div class="event-time-row">
+          <input id="person-relationship-add-person" type="text" list="person-name-datalist" placeholder="相手の名前">
+          <input id="person-relationship-add-type" type="text" list="relationship-type-datalist" placeholder="関係(例: 師弟)">
+        </div>
+      </div>
+      <datalist id="relationship-type-datalist">
+        <option value="友好"></option>
+        <option value="敵対"></option>
+        <option value="師"></option>
+        <option value="弟子"></option>
+        <option value="主君"></option>
+        <option value="家臣"></option>
+        <option value="恋人"></option>
+        <option value="好敵手"></option>
+      </datalist>
+      <button class="btn-secondary" id="person-relationship-add-btn" type="button">+ 関係を追加</button>
+
       <div class="section-label" style="padding-left:0;">概要(年表)</div>
       <div class="form-note">年月と詳細を入力すると、この人物の「出来事」として自動的に登録されます</div>
       <ul id="person-summary-list" class="list" style="padding:0;"></ul>
@@ -404,6 +428,39 @@
     </div>
   </section>
 
+  <!-- ===== 組織一覧 ===== -->
+  <section id="view-organizations" class="view">
+    <div class="topbar">
+      <h1>組織</h1>
+      <div class="topbar-actions"><button class="icon-btn" data-nav="view-bulk-affiliation">一括追加</button></div>
+    </div>
+    <div class="search-bar"><input id="organizations-search-input" type="text" placeholder="組織名で検索"></div>
+    <ul id="organizations-list" class="list"></ul>
+    <div id="organizations-empty" class="empty-state">まだ所属が登録されていません</div>
+  </section>
+
+  <!-- ===== 組織の一括追加 ===== -->
+  <section id="view-bulk-affiliation" class="view">
+    <div class="topbar">
+      <button class="icon-btn back" data-back>キャンセル</button>
+      <h1 style="font-size:18px;">組織を一括追加</h1>
+      <button class="icon-btn" id="bulk-affiliation-save-btn">保存</button>
+    </div>
+    <div class="form-body">
+      <div class="form-row"><label>組織名</label><input id="bulk-affiliation-name" type="text" list="affiliation-datalist" placeholder="例: ○○家"></div>
+      <div class="form-row">
+        <label>期間</label>
+        <div class="event-time-row">
+          <input id="bulk-affiliation-start" type="number" min="0" max="3000" placeholder="開始年">
+          <input id="bulk-affiliation-end" type="number" min="0" max="3000" placeholder="終了年(任意)">
+        </div>
+      </div>
+      <div class="section-label" style="padding-left:0;">対象の人物を選ぶ</div>
+      <div class="search-bar"><input id="bulk-affiliation-person-search" type="text" placeholder="人物名で絞り込み"></div>
+      <ul id="bulk-affiliation-person-list" class="list"></ul>
+    </div>
+  </section>
+
   <!-- ===== 年代検索 ===== -->
   <section id="view-year-lookup" class="view">
     <div class="topbar">
@@ -452,6 +509,7 @@
     <button class="tab-btn" data-tab="view-people"><span class="tab-icon">🧑</span><span>人物</span></button>
     <button class="tab-btn" data-tab="view-events"><span class="tab-icon">📜</span><span>出来事</span></button>
     <button class="tab-btn" data-tab="view-roles"><span class="tab-icon">🎖</span><span>役職</span></button>
+    <button class="tab-btn" data-tab="view-organizations"><span class="tab-icon">🏯</span><span>組織</span></button>
     <button class="tab-btn" data-tab="view-year-lookup"><span class="tab-icon">📅</span><span>年代</span></button>
   </nav>
 
