@@ -1,17 +1,15 @@
-// バックアップと復元: 時代・人物・出来事を1つのファイル(JSON)に書き出す/読み込む
+// バックアップと復元: 人物・出来事を1つのファイル(JSON)に書き出す/読み込む
 const Backup = (() => {
   const FORMAT = 'JinbutsurokuBackup';
 
   async function build() {
-    const [eras, people, events] = await Promise.all([
-      DB.getAllEras(), DB.getAllPeople(), DB.getAllEvents(),
-    ]);
+    const [people, events] = await Promise.all([DB.getAllPeople(), DB.getAllEvents()]);
     return {
       format: FORMAT,
-      version: 1,
+      version: 2,
       appVersion: typeof APP_VERSION !== 'undefined' ? APP_VERSION : '',
       exportedAt: new Date().toISOString(),
-      eras, people, events,
+      people, events,
     };
   }
 
@@ -52,26 +50,19 @@ const Backup = (() => {
 
   // 復元: 既存データはすべて削除し、バックアップの内容に完全に置き換える
   async function restore(data) {
-    const [oldEras, oldPeople, oldEvents] = await Promise.all([
-      DB.getAllEras(), DB.getAllPeople(), DB.getAllEvents(),
-    ]);
+    const [oldPeople, oldEvents] = await Promise.all([DB.getAllPeople(), DB.getAllEvents()]);
     for (const e of oldEvents) await DB.deleteEvent(e.id);
     for (const p of oldPeople) await DB.deletePerson(p.id);
-    for (const e of oldEras) await DB.deleteEra(e.id);
 
-    for (const era of (data.eras || [])) {
-      const { id, ...rest } = era;
-      await DB.addEra({ ...rest, id });
-    }
     for (const person of data.people) {
-      const { id, ...rest } = person;
+      const { id, eraId, ...rest } = person; // 旧バックアップのeraIdは捨てる
       await DB.addPerson({ ...rest, id });
     }
     for (const event of data.events) {
       const { id, ...rest } = event;
       await DB.addEvent({ ...rest, id });
     }
-    return { eras: (data.eras || []).length, people: data.people.length, events: data.events.length };
+    return { people: data.people.length, events: data.events.length };
   }
 
   return { build, exportFile, parse, restore };

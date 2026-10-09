@@ -1,6 +1,6 @@
-// IndexedDB ラッパー: 時代・人物・出来事(参加者つき)を永続化する
+// IndexedDB ラッパー: 人物・出来事(参加者つき)を永続化する
 const DB_NAME = 'JinbutsurokuDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // 2: 時代(eras)ストアを廃止(人物の生年〜没年に置き換え)
 let dbPromise = null;
 
 function openDB() {
@@ -9,13 +9,11 @@ function openDB() {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
-      if (!db.objectStoreNames.contains('eras')) {
-        const store = db.createObjectStore('eras', { keyPath: 'id', autoIncrement: true });
-        store.createIndex('startYear', 'startYear', { unique: false });
+      if (db.objectStoreNames.contains('eras')) {
+        db.deleteObjectStore('eras');
       }
       if (!db.objectStoreNames.contains('people')) {
-        const store = db.createObjectStore('people', { keyPath: 'id', autoIncrement: true });
-        store.createIndex('eraId', 'eraId', { unique: false });
+        db.createObjectStore('people', { keyPath: 'id', autoIncrement: true });
       }
       if (!db.objectStoreNames.contains('events')) {
         const store = db.createObjectStore('events', { keyPath: 'id', autoIncrement: true });
@@ -40,29 +38,6 @@ function promisifyRequest(req) {
 }
 
 const DB = {
-  // ---- 時代 ----
-  async addEra(era) {
-    const store = await tx('eras', 'readwrite');
-    return promisifyRequest(store.add(era));
-  },
-  async getAllEras() {
-    const store = await tx('eras', 'readonly');
-    const list = await promisifyRequest(store.getAll());
-    return list.sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
-  },
-  async getEra(id) {
-    const store = await tx('eras', 'readonly');
-    return promisifyRequest(store.get(id));
-  },
-  async updateEra(era) {
-    const store = await tx('eras', 'readwrite');
-    return promisifyRequest(store.put(era));
-  },
-  async deleteEra(id) {
-    const store = await tx('eras', 'readwrite');
-    return promisifyRequest(store.delete(id));
-  },
-
   // ---- 人物 ----
   async addPerson(person) {
     const store = await tx('people', 'readwrite');

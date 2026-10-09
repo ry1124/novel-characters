@@ -44,9 +44,9 @@
       </div>
     </div>
     <div class="detail-header">
-      <span id="person-era-badge" class="badge era"></span>
       <h2 id="person-name"></h2>
       <div class="detail-sub" id="person-kana"></div>
+      <div class="detail-sub" id="person-years"></div>
       <div class="detail-sub" id="person-summary"></div>
     </div>
     <div id="person-death-banner" class="death-banner hidden"></div>
@@ -98,50 +98,6 @@
     <div class="map-canvas-wrap"><svg id="map-svg" class="map-canvas" viewBox="0 0 400 300"></svg></div>
   </section>
 
-  <!-- ===== 時代一覧 ===== -->
-  <section id="view-eras" class="view">
-    <div class="topbar">
-      <h1>時代</h1>
-      <div class="topbar-actions"><button class="icon-btn" data-nav="view-edit-era" data-new="era">+ 追加</button></div>
-    </div>
-    <ul id="eras-list" class="list"></ul>
-    <div id="eras-empty" class="empty-state">まだ時代が登録されていません</div>
-  </section>
-
-  <!-- ===== 時代詳細 ===== -->
-  <section id="view-era-detail" class="view">
-    <div class="topbar">
-      <button class="icon-btn back" data-back>‹ 戻る</button>
-      <div class="topbar-actions">
-        <button class="icon-btn" id="era-edit-btn">編集</button>
-        <button class="icon-btn" id="era-delete-btn">削除</button>
-      </div>
-    </div>
-    <div class="detail-header">
-      <h2 id="era-name"></h2>
-      <div class="detail-sub" id="era-years"></div>
-      <div class="detail-sub" id="era-note"></div>
-    </div>
-    <div class="section-label">この時代の人物</div>
-    <ul id="era-people" class="list"></ul>
-    <div class="section-label">この時代の出来事</div>
-    <ul id="era-events" class="timeline"></ul>
-  </section>
-
-  <!-- ===== 時代 編集 ===== -->
-  <section id="view-edit-era" class="view">
-    <div class="topbar">
-      <button class="icon-btn back" data-back>キャンセル</button>
-      <div class="topbar-actions"><button class="icon-btn" id="era-save-btn">保存</button></div>
-    </div>
-    <div class="form-body">
-      <div class="form-row"><label>時代名</label><input id="era-form-name" type="text" placeholder="例: 建国時代"></div>
-      <div class="form-row"><label>開始年(0〜3000)</label><input id="era-form-start" type="number" min="0" max="3000" value="0"></div>
-      <div class="form-row"><label>終了年(0〜3000)</label><input id="era-form-end" type="number" min="0" max="3000" value="0"></div>
-      <div class="form-row"><label>補足(任意)</label><textarea id="era-form-note" placeholder="時代の説明など"></textarea></div>
-    </div>
-  </section>
-
   <!-- ===== 人物 編集 ===== -->
   <section id="view-edit-person" class="view">
     <div class="topbar">
@@ -151,7 +107,8 @@
     <div class="form-body">
       <div class="form-row"><label>名前</label><input id="person-form-name" type="text" placeholder="人物名"></div>
       <div class="form-row"><label>読み(かな・検索用、任意)</label><input id="person-form-kana" type="text" placeholder="例: やまだたろう"></div>
-      <div class="form-row"><label>時代</label><select id="person-form-era"></select></div>
+      <div class="form-row"><label>生年(0〜3000)</label><input id="person-form-birth" type="number" min="0" max="3000" placeholder="例: 480"></div>
+      <div class="form-row"><label>没年(0〜3000、存命・不明なら空欄)</label><input id="person-form-death" type="number" min="0" max="3000" placeholder="例: 540"></div>
       <div class="form-row"><label>概要(任意)</label><textarea id="person-form-summary" placeholder="人物の概要・設定など"></textarea></div>
     </div>
   </section>
@@ -222,7 +179,6 @@
     <button class="tab-btn active" data-tab="view-search"><span class="tab-icon">🔎</span><span>検索</span></button>
     <button class="tab-btn" data-tab="view-people"><span class="tab-icon">🧑</span><span>人物</span></button>
     <button class="tab-btn" data-tab="view-events"><span class="tab-icon">📜</span><span>出来事</span></button>
-    <button class="tab-btn" data-tab="view-eras"><span class="tab-icon">🏯</span><span>時代</span></button>
   </nav>
 
 </div>
