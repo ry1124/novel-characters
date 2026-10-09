@@ -170,20 +170,68 @@ function renderSpouseList() {
       <button type="button" class="remove-btn" data-remove-spouse="${pid}">×</button>
     </li>`;
   }).join('');
-  renderSpouseAddSelect();
-}
-
-function renderSpouseAddSelect() {
-  const sel = document.getElementById('person-spouse-add');
-  const candidates = people.filter((p) => p.id !== editingPersonId && !spouseDraftIds.includes(p.id));
-  sel.innerHTML = candidates.length
-    ? candidates.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')
-    : '<option value="">(追加できる人物がいません)</option>';
 }
 
 function renderPersonNameDatalist() {
   document.getElementById('person-name-datalist').innerHTML =
     people.map((p) => `<option value="${escapeHtml(p.name)}"></option>`).join('');
+}
+
+// ===== 人物フォーム: 子・養子(保存済みの人物のみ、その場で関係を更新) =====
+function renderChildrenSection() {
+  const section = document.getElementById('person-children-section');
+  if (!editingPersonId) { section.classList.add('hidden'); return; }
+  section.classList.remove('hidden');
+
+  const bioChildren = people.filter((c) => c.fatherId === editingPersonId || c.motherId === editingPersonId);
+  document.getElementById('person-children-list').innerHTML = bioChildren.map((c) => `<li class="list-item" data-pid="${c.id}">
+      <div class="list-item-main"><div class="list-item-title">${escapeHtml(c.name)}</div></div>
+      <button type="button" class="remove-btn" data-remove-child="${c.id}">×</button>
+    </li>`).join('');
+
+  const adoptedChildren = people.filter((c) => c.adoptiveFatherId === editingPersonId || c.adoptiveMotherId === editingPersonId);
+  document.getElementById('person-adopted-children-list').innerHTML = adoptedChildren.map((c) => `<li class="list-item" data-pid="${c.id}">
+      <div class="list-item-main"><div class="list-item-title">${escapeHtml(c.name)}</div></div>
+      <button type="button" class="remove-btn" data-remove-adopted-child="${c.id}">×</button>
+    </li>`).join('');
+}
+
+// kind: 'bio' | 'adopted'。子となる人物の父/母(または養父/養母)の欄に、この編集中の人物を設定する
+async function addChildRelation(inputId, kind) {
+  if (!editingPersonId) return;
+  const input = document.getElementById(inputId);
+  const name = input.value.trim();
+  if (!name) return;
+  const focus = personById(editingPersonId);
+  const asFather = confirm(`${focus.name}を新しい子の「父」として登録しますか?\n(OK=父として登録／キャンセル=母として登録)`);
+  const childId = await resolvePersonByName(name, editingPersonId);
+  if (childId === editingPersonId) { input.value = ''; return; } // 自分自身を子にはできない
+  const child = await DB.getPerson(childId);
+  if (kind === 'bio') {
+    if (asFather) child.fatherId = editingPersonId; else child.motherId = editingPersonId;
+  } else {
+    if (asFather) child.adoptiveFatherId = editingPersonId; else child.adoptiveMotherId = editingPersonId;
+  }
+  await DB.updatePerson(child);
+  await refreshAll();
+  input.value = '';
+  renderChildrenSection();
+  renderPersonNameDatalist();
+}
+
+async function removeChildRelation(childId, kind) {
+  const child = await DB.getPerson(childId);
+  if (!child) return;
+  if (kind === 'bio') {
+    if (child.fatherId === editingPersonId) child.fatherId = null;
+    if (child.motherId === editingPersonId) child.motherId = null;
+  } else {
+    if (child.adoptiveFatherId === editingPersonId) child.adoptiveFatherId = null;
+    if (child.adoptiveMotherId === editingPersonId) child.adoptiveMotherId = null;
+  }
+  await DB.updatePerson(child);
+  await refreshAll();
+  renderChildrenSection();
 }
 
 // 父・母の欄に入力された名前から人物を探し、見つからなければその場で新しい人物を作る
@@ -194,7 +242,8 @@ async function resolvePersonByName(name, excludeId) {
   if (existing) return existing.id;
   const newId = await DB.addPerson({
     name: trimmed, kana: '', youmei: '', maidenName: '', genpukuYear: null, genpukuMonth: null,
-    roles: [], affiliations: [], birthYear: null, deathYear: null, fatherId: null, motherId: null, spouseIds: [], createdAt: Date.now(),
+    roles: [], affiliations: [], birthYear: null, deathYear: null,
+    fatherId: null, motherId: null, adoptiveFatherId: null, adoptiveMotherId: null, spouseIds: [], createdAt: Date.now(),
   });
   people.push({ id: newId, name: trimmed, roles: [], affiliations: [], spouseIds: [] }); // 同じ保存処理内での重複作成を防ぐ(refreshAllで正しい内容に置き換わる)
   return newId;
@@ -253,6 +302,7 @@ function openPersonForm(id) {
   renderRoleList();
   renderAffiliationList();
   renderSpouseList();
+  renderChildrenSection();
   navigateTo('view-edit-person');
 }
 
@@ -710,6 +760,8 @@ async function deletePerson(id) {
     let changed = false;
     if (other.fatherId === id) { other.fatherId = null; changed = true; }
     if (other.motherId === id) { other.motherId = null; changed = true; }
+    if (other.adoptiveFatherId === id) { other.adoptiveFatherId = null; changed = true; }
+    if (other.adoptiveMotherId === id) { other.adoptiveMotherId = null; changed = true; }
     if ((other.spouseIds || []).includes(id)) { other.spouseIds = other.spouseIds.filter((x) => x !== id); changed = true; }
     if (changed) await DB.updatePerson(other);
   }
@@ -845,9 +897,10 @@ function renderFamilyTree() {
     + spouses.map((sp) => treeBoxHtml(sp, '', '配偶者')).join('')
     + treeAddButtonHtml('spouse', '配偶者を追加');
 
-  const children = people.filter((c) => c.fatherId === p.id || c.motherId === p.id);
+  const bioChildren = people.filter((c) => c.fatherId === p.id || c.motherId === p.id).map((c) => ({ c, label: formatPersonYears(c) }));
+  const adoptedChildren = people.filter((c) => c.adoptiveFatherId === p.id || c.adoptiveMotherId === p.id).map((c) => ({ c, label: '養子' }));
   document.getElementById('tree-children').innerHTML =
-    children.map((c) => treeBoxHtml(c, '', formatPersonYears(c))).join('')
+    bioChildren.concat(adoptedChildren).map(({ c, label }) => treeBoxHtml(c, '', label)).join('')
     + treeAddButtonHtml('child', '子を追加');
 }
 
@@ -857,7 +910,7 @@ async function treeAddPerson(relation) {
   if (!focus) return;
   const name = (prompt('新しい人物の名前を入力してください') || '').trim();
   if (!name) return;
-  const base = { name, kana: '', youmei: '', roles: [], birthYear: null, deathYear: null, fatherId: null, motherId: null, spouseIds: [], createdAt: Date.now() };
+  const base = { name, kana: '', youmei: '', roles: [], affiliations: [], birthYear: null, deathYear: null, fatherId: null, motherId: null, adoptiveFatherId: null, adoptiveMotherId: null, spouseIds: [], createdAt: Date.now() };
 
   if (relation === 'father') {
     const newId = await DB.addPerson(base);
@@ -873,7 +926,11 @@ async function treeAddPerson(relation) {
     await DB.updatePerson(focus);
   } else if (relation === 'child') {
     const asFather = confirm(`${focus.name}を新しい人物の「父」として登録しますか?\n(OK=父として登録／キャンセル=母として登録)`);
-    await DB.addPerson({ ...base, fatherId: asFather ? focus.id : null, motherId: asFather ? null : focus.id });
+    const isAdopted = confirm('養子として登録しますか?\n(OK=養子として登録／キャンセル=実子として登録)');
+    const childData = isAdopted
+      ? { ...base, adoptiveFatherId: asFather ? focus.id : null, adoptiveMotherId: asFather ? null : focus.id }
+      : { ...base, fatherId: asFather ? focus.id : null, motherId: asFather ? null : focus.id };
+    await DB.addPerson(childData);
   }
   await refreshAll();
   renderFamilyTree();
@@ -1112,18 +1169,35 @@ function wireForms() {
     renderAffiliationList();
   });
 
-  document.getElementById('person-spouse-add-btn').addEventListener('click', () => {
-    const sel = document.getElementById('person-spouse-add');
-    const pid = Number(sel.value);
-    if (!pid || spouseDraftIds.includes(pid)) return;
+  document.getElementById('person-spouse-add-btn').addEventListener('click', async () => {
+    const input = document.getElementById('person-spouse-add');
+    const name = input.value.trim();
+    if (!name) return;
+    const pid = await resolvePersonByName(name, editingPersonId);
+    input.value = '';
+    if (!pid || pid === editingPersonId || spouseDraftIds.includes(pid)) { renderPersonNameDatalist(); return; }
     spouseDraftIds.push(pid);
     renderSpouseList();
+    renderPersonNameDatalist();
   });
   document.getElementById('person-spouse-list').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-remove-spouse]');
     if (!btn) return;
     spouseDraftIds = spouseDraftIds.filter((id) => id !== Number(btn.dataset.removeSpouse));
     renderSpouseList();
+  });
+
+  document.getElementById('person-child-add-btn').addEventListener('click', () => addChildRelation('person-child-add', 'bio'));
+  document.getElementById('person-adopted-child-add-btn').addEventListener('click', () => addChildRelation('person-adopted-child-add', 'adopted'));
+  document.getElementById('person-children-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-child]');
+    if (!btn) return;
+    removeChildRelation(Number(btn.dataset.removeChild), 'bio');
+  });
+  document.getElementById('person-adopted-children-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-adopted-child]');
+    if (!btn) return;
+    removeChildRelation(Number(btn.dataset.removeAdoptedChild), 'adopted');
   });
 
   document.getElementById('memo-detect-btn').addEventListener('click', detectPeopleInMemo);
