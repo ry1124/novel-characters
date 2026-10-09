@@ -1370,8 +1370,16 @@ function renderFamilyTree() {
       const isAdoptive = parentEntries[i].rel === 'adoptiveFather' || parentEntries[i].rel === 'adoptiveMother';
       drawConnector(b.cx, parentBottomY, b.cx, barY, isAdoptive);
     });
-    // 父母(実親・養親含む)をいったん横線で結び、そこから1本の線だけを子の世代へ落とす(父と母それぞれから別々に2本伸びて見えるのを防ぐ)
-    svg.appendChild(svgEl('line', { x1: parentLeft, y1: barY, x2: parentRight, y2: barY, stroke: LINE, 'stroke-width': 2 }));
+    // 父と母(実親・養親それぞれの組)は婚姻を表す二重線(＝)で結ぶ。複数の組が同時にいる場合も組ごとに結ぶ
+    const boxByRel = (rel) => { const idx = parentEntries.findIndex((e) => e.rel === rel); return idx >= 0 ? parentsBoxes[idx] : null; };
+    [['father', 'mother'], ['adoptiveFather', 'adoptiveMother']].forEach(([relA, relB]) => {
+      const a = boxByRel(relA), b = boxByRel(relB);
+      if (!a || !b) return;
+      const x1 = Math.min(a.cx, b.cx), x2 = Math.max(a.cx, b.cx);
+      svg.appendChild(svgEl('line', { x1, y1: barY - 1.5, x2, y2: barY - 1.5, stroke: LINE, 'stroke-width': 1.5 }));
+      svg.appendChild(svgEl('line', { x1, y1: barY + 1.5, x2, y2: barY + 1.5, stroke: LINE, 'stroke-width': 1.5 }));
+    });
+    // 婚姻線(＝)の中心から1本だけ線を落として子の世代のbusへ繋ぐ(父母それぞれから別々に2本伸びて見えるのを防ぐ)
     svg.appendChild(svgEl('line', { x1: parentCenterX, y1: barY, x2: parentCenterX, y2: busY, stroke: LINE, 'stroke-width': 2 }));
     const selfXs = selfPeopleBoxes.map((b) => b.cx);
     const left = Math.min(parentCenterX, ...selfXs), right = Math.max(parentCenterX, ...selfXs);
