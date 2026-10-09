@@ -25,6 +25,11 @@ let personYearFocusId = null;
 const STATUS_LIST = ['生存', '死亡', '負傷', '不明'];
 const STATUS_CLASS = { 生存: 'alive', 死亡: 'dead', 負傷: 'injured', 不明: 'unknown' };
 
+// 討ち取った相手・負傷させた相手は複数人対応(killedPersonIds/injuredPersonIds)。
+// 旧バージョン(1人のみ、killedPersonId/injuredPersonId)で保存済みのデータも読めるようにフォールバックする
+function killedIdsOf(p) { return p.killedPersonIds || (p.killedPersonId != null ? [p.killedPersonId] : []); }
+function injuredIdsOf(p) { return p.injuredPersonIds || (p.injuredPersonId != null ? [p.injuredPersonId] : []); }
+
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -537,9 +542,9 @@ function renderEventDetail() {
   listEl.innerHTML = (ev.participants || []).map((p) => {
     const person = pm.get(p.personId);
     const age = person ? personAgeAt(person, ev.year) : null;
-    const killed = p.killedPersonId != null ? pm.get(p.killedPersonId) : null;
-    const injured = p.injuredPersonId != null ? pm.get(p.injuredPersonId) : null;
-    const subParts = [age !== null ? `${age}歳` : '', killed ? `${killed.name}を討ち取った` : '', injured ? `${injured.name}を負傷させた` : '', p.note || ''].filter(Boolean);
+    const killedNames = killedIdsOf(p).map((id) => pm.get(id)).filter(Boolean).map((o) => o.name);
+    const injuredNames = injuredIdsOf(p).map((id) => pm.get(id)).filter(Boolean).map((o) => o.name);
+    const subParts = [age !== null ? `${age}歳` : '', killedNames.length ? `${killedNames.join('・')}を討ち取った` : '', injuredNames.length ? `${injuredNames.join('・')}を負傷させた` : '', p.note || ''].filter(Boolean);
     return `<li class="list-item" data-person-id="${p.personId}">
       <div class="list-item-main">
         <div class="list-item-title">${escapeHtml(person ? person.name : '(不明な人物)')}</div>
@@ -578,13 +583,20 @@ function renderEventFormParticipants() {
   listEl.innerHTML = draftParticipants.map((p) => {
     const person = pm.get(p.personId);
     const options = STATUS_LIST.map((s) => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('');
-    const otherOptionsFor = (selectedId, placeholder) => [`<option value="">${placeholder}</option>`]
-      .concat(draftParticipants.filter((o) => o.personId !== p.personId).map((o) => {
+    const killedIds = killedIdsOf(p);
+    const injuredIds = injuredIdsOf(p);
+    // 選択肢には「本人」と「既に追加済みの相手」を出さない(同じ相手を二重追加できないようにするため)
+    const otherOptionsFor = (excludeIds, placeholder) => [`<option value="">${placeholder}</option>`]
+      .concat(draftParticipants.filter((o) => o.personId !== p.personId && !excludeIds.includes(o.personId)).map((o) => {
         const op = pm.get(o.personId);
-        return `<option value="${o.personId}" ${selectedId === o.personId ? 'selected' : ''}>${escapeHtml(op ? op.name : '?')}</option>`;
+        return `<option value="${o.personId}">${escapeHtml(op ? op.name : '?')}</option>`;
       })).join('');
-    const killOptions = otherOptionsFor(p.killedPersonId, '討ち取った相手-');
-    const injureOptions = otherOptionsFor(p.injuredPersonId, '負傷させた相手-');
+    const killOptions = otherOptionsFor(killedIds, '討ち取った相手を選ぶ-');
+    const injureOptions = otherOptionsFor(injuredIds, '負傷させた相手を選ぶ-');
+    const chipsOf = (ids, removeAttr) => ids.map((id) => {
+      const op = pm.get(id);
+      return `<span class="chip-link" ${removeAttr}="${id}">${escapeHtml(op ? op.name : '?')} ×</span>`;
+    }).join('');
     return `<li class="participant-row-wrap" data-pid="${p.personId}">
       <div class="participant-row-top">
         <div class="list-item-main">${escapeHtml(person ? person.name : '(不明)')}</div>
@@ -593,8 +605,14 @@ function renderEventFormParticipants() {
       </div>
       <div class="participant-row-bottom">
         <select class="pf-kill">${killOptions}</select>
-        <select class="pf-injure">${injureOptions}</select>
+        <button type="button" class="add-btn pf-kill-add">＋</button>
       </div>
+      ${killedIds.length ? `<div class="chip-wrap">${chipsOf(killedIds, 'data-kill-remove')}</div>` : ''}
+      <div class="participant-row-bottom">
+        <select class="pf-injure">${injureOptions}</select>
+        <button type="button" class="add-btn pf-injure-add">＋</button>
+      </div>
+      ${injuredIds.length ? `<div class="chip-wrap">${chipsOf(injuredIds, 'data-injure-remove')}</div>` : ''}
       <div class="participant-row-bottom">
         <input class="pf-note" type="text" placeholder="備考" value="${escapeHtml(p.note || '')}">
       </div>
@@ -755,7 +773,7 @@ async function syncSummaryRows(personId) {
     }
     const newId = await DB.addEvent({
       title: detail, year, month, endYear: null, endMonth: null, description: '',
-      terrainMap: null, participants: [{ personId, status: '生存', note: '', position: null, killedPersonId: null, injuredPersonId: null }],
+      terrainMap: null, participants: [{ personId, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [] }],
       parentEventId: null,
     });
     keepEventIds.add(newId);
@@ -879,6 +897,18 @@ async function deletePerson(id) {
   goBack();
 }
 
+// 出来事内で「死亡」になった参加者の没年を、人物側に自動反映する(既に没年が入っている人物は上書きしない)
+async function syncDeathYearsFromParticipants(ev) {
+  for (const part of ev.participants || []) {
+    if (part.status !== '死亡') continue;
+    const person = personById(part.personId);
+    if (person && person.deathYear == null) {
+      person.deathYear = ev.year;
+      await DB.updatePerson(person);
+    }
+  }
+}
+
 async function saveEventForm() {
   const title = document.getElementById('event-form-title').value.trim();
   if (!title) { alert('出来事を入力してください'); return; }
@@ -900,9 +930,11 @@ async function saveEventForm() {
     ev.description = description; ev.participants = draftParticipants;
     await DB.updateEvent(ev);
     currentEventId = ev.id;
+    await syncDeathYearsFromParticipants(ev);
   } else {
     const id = await DB.addEvent({ title, category, year, month, endYear, endMonth, description, terrainMap: null, participants: draftParticipants, parentEventId: eventFormParentId });
     currentEventId = id;
+    await syncDeathYearsFromParticipants({ year, participants: draftParticipants });
   }
   await refreshAll();
   goBack();
@@ -974,7 +1006,7 @@ function createEventFromMemo() {
   document.getElementById('event-form-end-year').value = '';
   document.getElementById('event-form-end-month').value = '';
   document.getElementById('event-form-description').value = memo;
-  draftParticipants = Array.from(memoDetectedPersonIds).map((pid) => ({ personId: pid, status: '生存', note: '', position: null, killedPersonId: null, injuredPersonId: null }));
+  draftParticipants = Array.from(memoDetectedPersonIds).map((pid) => ({ personId: pid, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [] }));
   renderEventFormParticipants();
   renderAddPersonSelect();
   navigateTo('view-edit-event');
@@ -1391,7 +1423,7 @@ function wireForms() {
     const sel = document.getElementById('event-form-add-person');
     const personId = Number(sel.value);
     if (!personId || draftParticipants.some((p) => p.personId === personId)) return;
-    draftParticipants.push({ personId, status: '生存', note: '', position: null, killedPersonId: null, injuredPersonId: null });
+    draftParticipants.push({ personId, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [] });
     renderEventFormParticipants();
     renderAddPersonSelect();
   });
@@ -1401,7 +1433,7 @@ function wireForms() {
     if (!name) return;
     const personId = await DB.addPerson({ name, kana: '', youmei: '', roles: [], birthYear: null, deathYear: null, createdAt: Date.now() });
     await refreshAll();
-    draftParticipants.push({ personId, status: '生存', note: '', position: null, killedPersonId: null, injuredPersonId: null });
+    draftParticipants.push({ personId, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [] });
     renderEventFormParticipants();
     renderAddPersonSelect();
   });
@@ -1415,24 +1447,6 @@ function wireForms() {
     if (!draft) return;
     if (e.target.classList.contains('pf-status')) {
       draft.status = e.target.value;
-    } else if (e.target.classList.contains('pf-kill')) {
-      draft.killedPersonId = e.target.value ? Number(e.target.value) : null;
-      if (draft.killedPersonId !== null) {
-        // 「討ち取った相手」を選ぶと、その相手の生死を自動で「死亡」にする
-        const victim = draftParticipants.find((p) => p.personId === draft.killedPersonId);
-        if (victim) victim.status = '死亡';
-      }
-      renderEventFormParticipants(); // 相手側のステータス表示を更新するため再描画
-      return;
-    } else if (e.target.classList.contains('pf-injure')) {
-      draft.injuredPersonId = e.target.value ? Number(e.target.value) : null;
-      if (draft.injuredPersonId !== null) {
-        // 「負傷させた相手」を選ぶと、その相手の状態を自動で「負傷」にする(すでに死亡扱いなら上書きしない)
-        const injured = draftParticipants.find((p) => p.personId === draft.injuredPersonId);
-        if (injured && injured.status !== '死亡') injured.status = '負傷';
-      }
-      renderEventFormParticipants();
-      return;
     }
   });
   participantsList.addEventListener('input', (e) => {
@@ -1444,13 +1458,61 @@ function wireForms() {
     if (e.target.classList.contains('pf-note')) draft.note = e.target.value;
   });
   participantsList.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-remove]');
-    if (!btn) return;
-    const pid = Number(btn.dataset.remove);
-    draftParticipants = draftParticipants.filter((p) => p.personId !== pid);
-    draftParticipants.forEach((p) => { if (p.killedPersonId === pid) p.killedPersonId = null; });
-    renderEventFormParticipants();
-    renderAddPersonSelect();
+    const removeBtn = e.target.closest('[data-remove]');
+    if (removeBtn) {
+      const pid = Number(removeBtn.dataset.remove);
+      draftParticipants = draftParticipants.filter((p) => p.personId !== pid);
+      draftParticipants.forEach((p) => {
+        p.killedPersonIds = killedIdsOf(p).filter((id) => id !== pid);
+        p.injuredPersonIds = injuredIdsOf(p).filter((id) => id !== pid);
+      });
+      renderEventFormParticipants();
+      renderAddPersonSelect();
+      return;
+    }
+    const row = e.target.closest('.participant-row-wrap');
+    if (!row) return;
+    const pid = Number(row.dataset.pid);
+    const draft = draftParticipants.find((p) => p.personId === pid);
+    if (!draft) return;
+
+    const killAdd = e.target.closest('.pf-kill-add');
+    if (killAdd) {
+      const sel = row.querySelector('.pf-kill');
+      const targetId = sel.value ? Number(sel.value) : null;
+      if (targetId != null) {
+        // 討ち取った相手を1人追加する(複数人討ち取った場合は何度でも追加できる)
+        draft.killedPersonIds = [...killedIdsOf(draft), targetId];
+        const victim = draftParticipants.find((p) => p.personId === targetId);
+        if (victim) victim.status = '死亡';
+        renderEventFormParticipants();
+      }
+      return;
+    }
+    const injureAdd = e.target.closest('.pf-injure-add');
+    if (injureAdd) {
+      const sel = row.querySelector('.pf-injure');
+      const targetId = sel.value ? Number(sel.value) : null;
+      if (targetId != null) {
+        draft.injuredPersonIds = [...injuredIdsOf(draft), targetId];
+        const injured = draftParticipants.find((p) => p.personId === targetId);
+        if (injured && injured.status !== '死亡') injured.status = '負傷';
+        renderEventFormParticipants();
+      }
+      return;
+    }
+    const killRemove = e.target.closest('[data-kill-remove]');
+    if (killRemove) {
+      draft.killedPersonIds = killedIdsOf(draft).filter((id) => id !== Number(killRemove.dataset.killRemove));
+      renderEventFormParticipants();
+      return;
+    }
+    const injureRemove = e.target.closest('[data-injure-remove]');
+    if (injureRemove) {
+      draft.injuredPersonIds = injuredIdsOf(draft).filter((id) => id !== Number(injureRemove.dataset.injureRemove));
+      renderEventFormParticipants();
+      return;
+    }
   });
 
   document.getElementById('person-summary-add-btn').addEventListener('click', () => {

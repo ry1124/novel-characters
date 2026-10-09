@@ -180,6 +180,9 @@ html, body {
   flex: 1; min-width: 0; font-size: 13px; padding: 6px 8px; border-radius: 8px; background: var(--surface2); border: 0; color: var(--text);
 }
 .remove-btn { background: none; border: none; color: var(--danger); font-size: 20px; padding: 4px 8px; cursor: pointer; }
+.add-btn { flex: none; width: 40px; border-radius: 8px; background: var(--accent); color: #fff; border: 0; font-size: 16px; font-weight: 700; cursor: pointer; }
+.chip-wrap { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 4px; }
+.chip-wrap .chip-link { margin: 0; padding: 4px 10px; font-size: 12px; }
 
 .summary-row input[type="number"] { flex: none; width: 56px; font-size: 13px; padding: 6px 6px; border-radius: 8px; background: var(--surface2); border: 0; color: var(--text); }
 .summary-row select { flex: none; width: 56px; font-size: 13px; padding: 6px 4px; border-radius: 8px; background: var(--surface2); border: 0; color: var(--text); }
