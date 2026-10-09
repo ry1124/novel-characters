@@ -79,6 +79,11 @@
         <button class="icon-btn" data-nav="view-edit-event" data-new="event">+ 追加</button>
       </div>
     </div>
+    <div class="filter-chips">
+      <button class="filter-chip active" data-category="">すべて</button>
+      <button class="filter-chip" data-category="戦い">戦い</button>
+      <button class="filter-chip" data-category="出来事">出来事</button>
+    </div>
     <div class="search-bar"><input id="events-search-input" type="text" placeholder="出来事名・説明で検索"></div>
     <ul id="events-list" class="list"></ul>
     <div id="events-empty" class="empty-state">まだ出来事が登録されていません</div>
@@ -303,6 +308,13 @@
     </div>
     <div class="form-body">
       <div class="form-note" id="event-form-parent-note"></div>
+      <div class="form-row">
+        <label>分類</label>
+        <select id="event-form-category">
+          <option value="出来事">出来事</option>
+          <option value="戦い">戦い</option>
+        </select>
+      </div>
       <div class="form-row">
         <label>時期・出来事</label>
         <div class="event-time-row">

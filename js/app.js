@@ -356,6 +356,7 @@ function openPersonForm(id) {
 function openEventForm(id, parentId) {
   editingEventId = id;
   const titleEl = document.getElementById('event-form-title');
+  const categoryEl = document.getElementById('event-form-category');
   const yearEl = document.getElementById('event-form-year');
   const monthEl = document.getElementById('event-form-month');
   const endYearEl = document.getElementById('event-form-end-year');
@@ -364,6 +365,7 @@ function openEventForm(id, parentId) {
   if (id) {
     const ev = eventById(id);
     titleEl.value = ev.title || '';
+    categoryEl.value = ev.category || '出来事';
     yearEl.value = ev.year ?? '';
     monthEl.value = ev.month ?? '';
     endYearEl.value = ev.endYear ?? '';
@@ -372,7 +374,7 @@ function openEventForm(id, parentId) {
     draftParticipants = (ev.participants || []).map((p) => ({ ...p }));
     eventFormParentId = ev.parentEventId ?? null;
   } else {
-    titleEl.value = ''; yearEl.value = ''; monthEl.value = '';
+    titleEl.value = ''; categoryEl.value = '出来事'; yearEl.value = ''; monthEl.value = '';
     endYearEl.value = ''; endMonthEl.value = ''; descEl.value = '';
     draftParticipants = [];
     eventFormParentId = parentId ?? null;
@@ -492,21 +494,24 @@ function eventMatchesQuery(ev, q) {
 }
 
 function eventListItemHtml(ev, indent) {
+  const category = ev.category || '出来事';
   return `<li class="list-item ${indent ? 'list-item-indent' : ''}" data-event-id="${ev.id}">
     <div class="list-item-main">
-      <div class="list-item-title">${indent ? '↳ ' : ''}${escapeHtml(ev.title)}</div>
+      <div class="list-item-title">${indent ? '↳ ' : ''}${escapeHtml(ev.title)} <span class="badge">${escapeHtml(category)}</span></div>
       <div class="list-item-sub">${formatEventTime(ev)} ・ 参加者${(ev.participants || []).length}人</div>
     </div>
     <span class="list-item-chevron">›</span>
   </li>`;
 }
 
+let eventsCategoryFilter = '';
 function renderEvents() {
   const listEl = document.getElementById('events-list');
   const emptyEl = document.getElementById('events-empty');
   if (!events.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); emptyEl.textContent = 'まだ出来事が登録されていません'; return; }
   const q = (document.getElementById('events-search-input').value || '').trim().toLowerCase();
-  const topEvents = events.filter((ev) => ev.parentEventId == null);
+  const topEvents = events.filter((ev) => ev.parentEventId == null
+    && (!eventsCategoryFilter || (ev.category || '出来事') === eventsCategoryFilter));
   const childrenOf = (id) => events.filter((ev) => ev.parentEventId === id).sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
   const filtered = q
     ? topEvents.filter((top) => eventMatchesQuery(top, q) || childrenOf(top.id).some((c) => eventMatchesQuery(c, q)))
@@ -524,7 +529,7 @@ function renderEventDetail() {
   const ev = eventById(currentEventId);
   if (!ev) { goBack(); return; }
   document.getElementById('event-title').textContent = ev.title;
-  document.getElementById('event-year').textContent = formatEventTime(ev);
+  document.getElementById('event-year').textContent = `${ev.category || '出来事'} ・ ${formatEventTime(ev)}`;
   document.getElementById('event-description').textContent = ev.description || '';
 
   const pm = peopleMapCache();
@@ -877,6 +882,7 @@ async function deletePerson(id) {
 async function saveEventForm() {
   const title = document.getElementById('event-form-title').value.trim();
   if (!title) { alert('出来事を入力してください'); return; }
+  const category = document.getElementById('event-form-category').value || '出来事';
   const year = clampYear(document.getElementById('event-form-year').value);
   const monthVal = document.getElementById('event-form-month').value;
   const month = monthVal ? Number(monthVal) : null;
@@ -890,12 +896,12 @@ async function saveEventForm() {
   const description = document.getElementById('event-form-description').value.trim();
   if (editingEventId) {
     const ev = eventById(editingEventId);
-    ev.title = title; ev.year = year; ev.month = month; ev.endYear = endYear; ev.endMonth = endMonth;
+    ev.title = title; ev.category = category; ev.year = year; ev.month = month; ev.endYear = endYear; ev.endMonth = endMonth;
     ev.description = description; ev.participants = draftParticipants;
     await DB.updateEvent(ev);
     currentEventId = ev.id;
   } else {
-    const id = await DB.addEvent({ title, year, month, endYear, endMonth, description, terrainMap: null, participants: draftParticipants, parentEventId: eventFormParentId });
+    const id = await DB.addEvent({ title, category, year, month, endYear, endMonth, description, terrainMap: null, participants: draftParticipants, parentEventId: eventFormParentId });
     currentEventId = id;
   }
   await refreshAll();
@@ -1320,6 +1326,14 @@ function wireLists() {
     peopleSortMode = chip.dataset.sort;
     bar.querySelectorAll('.filter-chip').forEach((c) => c.classList.toggle('active', c === chip));
     renderPeople();
+  }));
+
+  document.querySelectorAll('#view-events .filter-chips').forEach((bar) => bar.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-category]');
+    if (!chip) return;
+    eventsCategoryFilter = chip.dataset.category;
+    bar.querySelectorAll('.filter-chip').forEach((c) => c.classList.toggle('active', c === chip));
+    renderEvents();
   }));
 
   const delegate = (id, selector, fn) => document.getElementById(id).addEventListener('click', (e) => {
