@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>人物録</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== 検索 ===== -->
+  <section id="view-search" class="view active">
+    <div class="topbar">
+      <h1>人物録</h1>
+      <div class="topbar-actions"><button class="icon-btn" data-nav="view-settings">設定</button></div>
+    </div>
+    <div class="search-bar"><input id="search-input" type="text" placeholder="人物名・読みで検索"></div>
+    <ul id="search-results" class="list"></ul>
+    <div id="search-empty" class="empty-state">名前を入力すると、人物の経歴を検索できます</div>
+  </section>
+
+  <!-- ===== 人物一覧 ===== -->
+  <section id="view-people" class="view">
+    <div class="topbar">
+      <h1>人物</h1>
+      <div class="topbar-actions"><button class="icon-btn" data-nav="view-edit-person" data-new="person">+ 追加</button></div>
+    </div>
+    <ul id="people-list" class="list"></ul>
+    <div id="people-empty" class="empty-state">まだ人物が登録されていません</div>
+  </section>
+
+  <!-- ===== 人物詳細 ===== -->
+  <section id="view-person-detail" class="view">
+    <div class="topbar">
+      <button class="icon-btn back" data-back>‹ 戻る</button>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="person-edit-btn">編集</button>
+        <button class="icon-btn" id="person-delete-btn">削除</button>
+      </div>
+    </div>
+    <div class="detail-header">
+      <span id="person-era-badge" class="badge era"></span>
+      <h2 id="person-name"></h2>
+      <div class="detail-sub" id="person-kana"></div>
+      <div class="detail-sub" id="person-summary"></div>
+    </div>
+    <div id="person-death-banner" class="death-banner hidden"></div>
+    <div class="section-label">経歴年表</div>
+    <ul id="person-timeline" class="timeline"></ul>
+    <div id="person-timeline-empty" class="empty-state">この人物が参加した出来事はまだありません</div>
+  </section>
+
+  <!-- ===== 出来事一覧 ===== -->
+  <section id="view-events" class="view">
+    <div class="topbar">
+      <h1>出来事</h1>
+      <div class="topbar-actions"><button class="icon-btn" data-nav="view-edit-event" data-new="event">+ 追加</button></div>
+    </div>
+    <ul id="events-list" class="list"></ul>
+    <div id="events-empty" class="empty-state">まだ出来事が登録されていません</div>
+  </section>
+
+  <!-- ===== 出来事詳細 ===== -->
+  <section id="view-event-detail" class="view">
+    <div class="topbar">
+      <button class="icon-btn back" data-back>‹ 戻る</button>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="event-edit-btn">編集</button>
+        <button class="icon-btn" id="event-delete-btn">削除</button>
+      </div>
+    </div>
+    <div class="detail-header">
+      <h2 id="event-title"></h2>
+      <div class="detail-sub" id="event-year"></div>
+      <div class="detail-sub" id="event-description"></div>
+    </div>
+    <div class="detail-actions"><button class="btn-secondary" id="event-map-btn">地形・配置を編集</button></div>
+    <div class="map-canvas-wrap" id="event-map-preview-wrap" style="display:none;">
+      <svg id="event-map-preview" class="map-canvas" viewBox="0 0 400 300"></svg>
+    </div>
+    <div class="section-label">参加者</div>
+    <ul id="event-participants" class="list"></ul>
+  </section>
+
+  <!-- ===== 地形配置エディタ ===== -->
+  <section id="view-event-map-editor" class="view">
+    <div class="topbar">
+      <button class="icon-btn back" data-back>‹ 戻る</button>
+      <div class="topbar-actions"><button class="icon-btn" id="map-save-btn">保存</button></div>
+    </div>
+    <div class="map-toolbar" id="map-toolbar"></div>
+    <div class="map-hint">地形ボタンを選んでからキャンバスをタップで配置。参加者のマーカーはドラッグで移動できます。「削除」を選んでタップすると消せます。</div>
+    <div class="map-canvas-wrap"><svg id="map-svg" class="map-canvas" viewBox="0 0 400 300"></svg></div>
+  </section>
+
+  <!-- ===== 時代一覧 ===== -->
+  <section id="view-eras" class="view">
+    <div class="topbar">
+      <h1>時代</h1>
+      <div class="topbar-actions"><button class="icon-btn" data-nav="view-edit-era" data-new="era">+ 追加</button></div>
+    </div>
+    <ul id="eras-list" class="list"></ul>
+    <div id="eras-empty" class="empty-state">まだ時代が登録されていません</div>
+  </section>
+
+  <!-- ===== 時代詳細 ===== -->
+  <section id="view-era-detail" class="view">
+    <div class="topbar">
+      <button class="icon-btn back" data-back>‹ 戻る</button>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="era-edit-btn">編集</button>
+        <button class="icon-btn" id="era-delete-btn">削除</button>
+      </div>
+    </div>
+    <div class="detail-header">
+      <h2 id="era-name"></h2>
+      <div class="detail-sub" id="era-note"></div>
+    </div>
+    <div class="section-label">この時代の人物</div>
+    <ul id="era-people" class="list"></ul>
+    <div class="section-label">この時代の出来事</div>
+    <ul id="era-events" class="timeline"></ul>
+  </section>
+
+  <!-- ===== 時代 編集 ===== -->
+  <section id="view-edit-era" class="view">
+    <div class="topbar">
+      <button class="icon-btn back" data-back>キャンセル</button>
+      <div class="topbar-actions"><button class="icon-btn" id="era-save-btn">保存</button></div>
+    </div>
+    <div class="form-body">
+      <div class="form-row"><label>時代名</label><input id="era-form-name" type="text" placeholder="例: 建国時代"></div>
+      <div class="form-row"><label>並び順(小さい数字ほど上に表示)</label><input id="era-form-order" type="number" value="0"></div>
+      <div class="form-row"><label>補足(任意)</label><textarea id="era-form-note" placeholder="時代の説明など"></textarea></div>
+    </div>
+  </section>
+
+  <!-- ===== 人物 編集 ===== -->
+  <section id="view-edit-person" class="view">
+    <div class="topbar">
+      <button class="icon-btn back" data-back>キャンセル</button>
+      <div class="topbar-actions"><button class="icon-btn" id="person-save-btn">保存</button></div>
+    </div>
+    <div class="form-body">
+      <div class="form-row"><label>名前</label><input id="person-form-name" type="text" placeholder="人物名"></div>
+      <div class="form-row"><label>読み(かな・検索用、任意)</label><input id="person-form-kana" type="text" placeholder="例: やまだたろう"></div>
+      <div class="form-row"><label>時代</label><select id="person-form-era"></select></div>
+      <div class="form-row"><label>概要(任意)</label><textarea id="person-form-summary" placeholder="人物の概要・設定など"></textarea></div>
+    </div>
+  </section>
+
+  <!-- ===== 出来事 編集 ===== -->
+  <section id="view-edit-event" class="view">
+    <div class="topbar">
+      <button class="icon-btn back" data-back>キャンセル</button>
+      <div class="topbar-actions"><button class="icon-btn" id="event-save-btn">保存</button></div>
+    </div>
+    <div class="form-body">
+      <div class="form-row"><label>出来事名</label><input id="event-form-title" type="text" placeholder="例: ○○の戦い"></div>
+      <div class="form-row"><label>年(独自の年数)</label><input id="event-form-year" type="number" placeholder="例: 503"></div>
+      <div class="form-row"><label>説明(任意)</label><textarea id="event-form-description" placeholder="出来事の内容"></textarea></div>
+      <div class="section-label" style="padding-left:0;">参加者</div>
+      <ul id="event-form-participants" class="list" style="padding:0;"></ul>
+      <div class="form-row">
+        <label>参加者を追加</label>
+        <select id="event-form-add-person"></select>
+      </div>
+      <button class="btn-secondary" id="event-form-add-btn" type="button">+ この人物を参加者に追加</button>
+    </div>
+  </section>
+
+  <!-- ===== 設定 ===== -->
+  <section id="view-settings" class="view">
+    <div class="topbar">
+      <button class="icon-btn back" data-back>‹ 戻る</button>
+      <h1 style="font-size:20px;">設定</h1>
+      <div style="width:40px;"></div>
+    </div>
+    <div class="form-body">
+      <div class="section-label" style="padding-left:0;">バックアップ</div>
+      <button class="btn-primary" id="backup-export-btn">データを書き出す(JSON)</button>
+      <button class="btn-secondary" id="backup-import-btn">データを読み込む(JSON)</button>
+      <input type="file" id="backup-import-file" accept="application/json" class="hidden">
+      <div class="form-note" id="backup-status"></div>
+      <div class="section-label" style="padding-left:0;">バージョン</div>
+      <div class="detail-sub">人物録 v<span id="app-version"></span></div>
+    </div>
+  </section>
+
+  <!-- ===== 確認シート ===== -->
+  <div id="confirm-sheet" class="sheet-overlay hidden">
+    <div class="sheet">
+      <div class="sheet-list">
+        <button class="sheet-btn danger" id="confirm-sheet-ok">削除する</button>
+      </div>
+      <div class="sheet-list"><button class="sheet-btn cancel" id="confirm-sheet-cancel">キャンセル</button></div>
+    </div>
+  </div>
+
+  <nav class="tabbar" id="tabbar">
+    <button class="tab-btn active" data-tab="view-search"><span class="tab-icon">🔎</span><span>検索</span></button>
+    <button class="tab-btn" data-tab="view-people"><span class="tab-icon">🧑</span><span>人物</span></button>
+    <button class="tab-btn" data-tab="view-events"><span class="tab-icon">📜</span><span>出来事</span></button>
+    <button class="tab-btn" data-tab="view-eras"><span class="tab-icon">🏯</span><span>時代</span></button>
+  </nav>
+
+</div>
+<script src="js/version.js"></script>
+<script src="js/db.js"></script>
+<script src="js/backup.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
