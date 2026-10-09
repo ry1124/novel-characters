@@ -980,12 +980,13 @@ function openFamilyTree(id) {
   renderFamilyTree();
 }
 
-// 樹形図のボックス配置: 1行分の人物を中央(x=0)基準で横に並べた座標を返す
+// 樹形図のボックス配置: 1行分の人物をcenterX基準で横に並べた座標を返す(centerX省略時は0)
 const TREE_BOX_W = 92, TREE_BOX_H = 44, TREE_GAP = 14;
-function treeRowLayout(items, y) {
+function treeRowLayout(items, y, centerX) {
+  const cx0 = centerX || 0;
   const n = items.length;
   const totalW = n * TREE_BOX_W + Math.max(0, n - 1) * TREE_GAP;
-  const startX = -totalW / 2;
+  const startX = cx0 - totalW / 2;
   return items.map((person, i) => {
     const x = startX + i * (TREE_BOX_W + TREE_GAP);
     return { person, x, y, cx: x + TREE_BOX_W / 2, cy: y + TREE_BOX_H / 2 };
@@ -1013,10 +1014,9 @@ function renderFamilyTree() {
   const effMotherId = (x) => x.motherId ?? x.adoptiveMotherId ?? null;
   const pEffFatherId = effFatherId(p), pEffMotherId = effMotherId(p);
   const siblings = people.filter((c) => c.id !== p.id
-    && ((pEffFatherId != null && effFatherId(c) === pEffFatherId) || (pEffMotherId != null && effMotherId(c) === pEffMotherId)))
-    .sort((a, b) => (a.birthYear ?? 1e9) - (b.birthYear ?? 1e9));
-  // 本人は必ず兄弟姉妹の並びの最後に置く(配偶者ボックスを隣接させて線のズレを防ぐため)
-  const selfRowPeople = [...siblings, p];
+    && ((pEffFatherId != null && effFatherId(c) === pEffFatherId) || (pEffMotherId != null && effMotherId(c) === pEffMotherId)));
+  // 本人も兄弟姉妹と同じ基準(誕生年、年長が左)で並べる。生年未登録は年少側(右)扱い
+  const selfRowPeople = [...siblings, p].sort((a, b) => (a.birthYear ?? 1e9) - (b.birthYear ?? 1e9));
   const spouses = (p.spouseIds || []).map((sid) => personById(sid)).filter(Boolean);
   const bioChildren = people.filter((c) => c.fatherId === p.id || c.motherId === p.id);
   const adoptedChildren = people.filter((c) => c.adoptiveFatherId === p.id || c.adoptiveMotherId === p.id);
@@ -1024,15 +1024,22 @@ function renderFamilyTree() {
 
   const rowY = { parents: 36, mid: 190, children: 344 };
   const parentsPos = treeRowLayout(parentEntries.map((e) => e.person), rowY.parents);
-  // 本人・兄弟姉妹だけで中央寄せし、配偶者はその後ろに追加する(全体を一緒に中央寄せすると親からの縦線とズレるため)
-  const selfRowPos = treeRowLayout(selfRowPeople, rowY.mid);
-  const selfPos = selfRowPos[selfRowPos.length - 1];
+  // 本人・兄弟姉妹は生年順の並びをそのまま中央寄せし、配偶者は本人の右隣に挿入する
+  // (本人より年下の兄弟姉妹がいる場合は、挿入した配偶者の分だけ右へずらして重なりを避ける)
+  const selfRowPosRaw = treeRowLayout(selfRowPeople, rowY.mid);
+  const selfIdxRaw = selfRowPeople.findIndex((s) => s.id === p.id);
+  const spouseShift = spouses.length * (TREE_BOX_W + TREE_GAP);
+  const selfRowPos = selfRowPosRaw.map((pos, i) => (i > selfIdxRaw && spouseShift)
+    ? { ...pos, x: pos.x + spouseShift, cx: pos.cx + spouseShift } : pos);
+  const selfPos = selfRowPos[selfIdxRaw];
   const spousePos = spouses.map((sp, i) => {
     const x = selfPos.x + (i + 1) * (TREE_BOX_W + TREE_GAP);
     return { person: sp, x, y: rowY.mid, cx: x + TREE_BOX_W / 2, cy: rowY.mid + TREE_BOX_H / 2 };
   });
   const midPos = selfRowPos.concat(spousePos);
-  const childrenPos = treeRowLayout(childrenRowPeople, rowY.children);
+  // 子の行は本人(+配偶者)の実際の位置の真下に中央寄せする(全体の中心0に合わせると親の位置によってズレるため)
+  const coupleCenterX = spousePos.length ? (selfPos.cx + spousePos[spousePos.length - 1].cx) / 2 : selfPos.cx;
+  const childrenPos = treeRowLayout(childrenRowPeople, rowY.children, coupleCenterX);
 
   const allX = [...parentsPos, ...midPos, ...childrenPos].map((b) => b.x);
   const minX = allX.length ? Math.min(...allX) : -TREE_BOX_W / 2;
