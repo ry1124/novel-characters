@@ -40,6 +40,12 @@ function formatPersonYears(p) {
   return `${p.birthYear ?? '?'}年〜${p.deathYear ?? ''}${p.deathYear ? '年' : ''}`;
 }
 
+// 生年が分かっている人物だけ、指定した年の時点での年齢(満年齢、月は考慮しない簡易計算)を返す
+function personAgeAt(p, year) {
+  if (p.birthYear == null || year == null) return null;
+  return year - p.birthYear;
+}
+
 async function refreshAll() {
   [people, events] = await Promise.all([DB.getAllPeople(), DB.getAllEvents()]);
 }
@@ -108,28 +114,57 @@ function renderSummaryList() {
   }).join('');
 }
 
+// ===== 人物フォーム: 役職(複数・期間あり)編集 =====
+// 役職は出来事とは別に、人物に直接 {role, startYear, endYear} の配列として持たせる。
+// 年によって変わったり、同時に2つ以上持てたりするため、単一の文字列ではなく配列にしている
+let roleDraftRows = [];
+let roleRowSeq = 0;
+function nextRoleRowId() { return 'role' + (roleRowSeq++); }
+
+function formatRolePeriod(row) {
+  return `${row.startYear ?? '?'}年〜${row.endYear != null ? row.endYear + '年' : ''}`;
+}
+
+function renderRoleList() {
+  const listEl = document.getElementById('person-role-list');
+  listEl.innerHTML = roleDraftRows.map((row) => `<li class="participant-row summary-row" data-row-id="${row.rowId}">
+      <input class="pr-start" type="number" min="0" max="3000" value="${row.startYear ?? ''}" placeholder="開始">
+      <input class="pr-end" type="number" min="0" max="3000" value="${row.endYear ?? ''}" placeholder="終了">
+      <input class="pr-name" type="text" value="${escapeHtml(row.role || '')}" placeholder="役職名">
+      <button type="button" class="remove-btn" data-remove-role="${row.rowId}">×</button>
+    </li>`).join('');
+}
+
 function openPersonForm(id) {
   editingPersonId = id;
   const nameEl = document.getElementById('person-form-name');
   const kanaEl = document.getElementById('person-form-kana');
+  const youmeiEl = document.getElementById('person-form-youmei');
   const birthEl = document.getElementById('person-form-birth');
   const deathEl = document.getElementById('person-form-death');
   if (id) {
     const p = personById(id);
     nameEl.value = p.name || '';
     kanaEl.value = p.kana || '';
+    youmeiEl.value = p.youmei || '';
     birthEl.value = p.birthYear ?? '';
     deathEl.value = p.deathYear ?? '';
     summaryDraftRows = loadSummaryRowsForPerson(id);
+    roleDraftRows = (p.roles || []).map((r) => ({ rowId: nextRoleRowId(), role: r.role, startYear: r.startYear, endYear: r.endYear }));
   } else {
-    nameEl.value = ''; kanaEl.value = ''; birthEl.value = ''; deathEl.value = '';
+    nameEl.value = ''; kanaEl.value = ''; youmeiEl.value = ''; birthEl.value = ''; deathEl.value = '';
     summaryDraftRows = [];
+    roleDraftRows = [];
   }
   summaryOriginalEventIds = summaryDraftRows.map((r) => r.eventId);
   document.getElementById('person-summary-add-year').value = '';
   document.getElementById('person-summary-add-month').value = '';
   document.getElementById('person-summary-add-detail').value = '';
+  document.getElementById('person-role-add-start').value = '';
+  document.getElementById('person-role-add-end').value = '';
+  document.getElementById('person-role-add-name').value = '';
   renderSummaryList();
+  renderRoleList();
   navigateTo('view-edit-person');
 }
 
@@ -166,7 +201,8 @@ function renderSearch() {
   const listEl = document.getElementById('search-results');
   const emptyEl = document.getElementById('search-empty');
   if (!q) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); emptyEl.textContent = '名前を入力すると、人物の経歴を検索できます'; return; }
-  const hits = people.filter((p) => (p.name || '').toLowerCase().includes(q) || (p.kana || '').toLowerCase().includes(q));
+  const hits = people.filter((p) => (p.name || '').toLowerCase().includes(q) || (p.kana || '').toLowerCase().includes(q)
+    || (p.youmei || '').toLowerCase().includes(q) || (p.roles || []).some((r) => (r.role || '').toLowerCase().includes(q)));
   if (!hits.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); emptyEl.textContent = '該当する人物が見つかりません'; return; }
   emptyEl.classList.add('hidden');
   listEl.innerHTML = hits.map((p) => personListItemHtml(p)).join('');
@@ -175,10 +211,12 @@ function renderSearch() {
 function personListItemHtml(p) {
   const dead = getDeathInfo(p.id);
   const years = formatPersonYears(p);
+  const roleNames = (p.roles || []).map((r) => r.role).filter(Boolean).join('・');
+  const subParts = [roleNames, years || '生没年未設定'].filter(Boolean);
   return `<li class="list-item" data-person-id="${p.id}">
     <div class="list-item-main">
       <div class="list-item-title">${escapeHtml(p.name)}</div>
-      <div class="list-item-sub">${years ? escapeHtml(years) : '生没年未設定'}${dead ? ' ・ 死亡済' : ''}</div>
+      <div class="list-item-sub">${escapeHtml(subParts.join(' ・ '))}${dead ? ' ・ 死亡済' : ''}</div>
     </div>
     ${dead ? '<span class="badge dead">死亡済</span>' : ''}
     <span class="list-item-chevron">›</span>
@@ -201,6 +239,8 @@ function renderPersonDetail() {
   if (!p) { goBack(); return; }
   document.getElementById('person-name').textContent = p.name;
   document.getElementById('person-kana').textContent = p.kana || '';
+  document.getElementById('person-youmei').textContent = p.youmei ? `幼名: ${p.youmei}` : '';
+  document.getElementById('person-roles').textContent = (p.roles || []).map((r) => `${r.role}(${formatRolePeriod(r)})`).join('、');
   document.getElementById('person-years').textContent = formatPersonYears(p);
 
   const death = getDeathInfo(p.id);
@@ -224,8 +264,9 @@ function renderPersonDetail() {
     timelineEl.innerHTML = myEvents.map((ev) => {
       const part = (ev.participants || []).find((pt) => pt.personId === p.id) || {};
       const isDead = part.status === '死亡';
+      const age = personAgeAt(p, ev.year);
       return `<li class="timeline-item ${isDead ? 'is-dead' : ''}" data-event-id="${ev.id}">
-        <div class="timeline-year">${formatEventTime(ev)}</div>
+        <div class="timeline-year">${formatEventTime(ev)}${age !== null ? `(${age}歳)` : ''}</div>
         <div class="timeline-body">
           <div class="timeline-title">${escapeHtml(ev.title)} <span class="status-pill ${STATUS_CLASS[part.status] || 'unknown'}">${part.status || '不明'}</span></div>
           <div class="timeline-desc">${escapeHtml(part.note || ev.description || '')}</div>
@@ -467,18 +508,26 @@ async function savePersonForm() {
   const name = document.getElementById('person-form-name').value.trim();
   if (!name) { alert('名前を入力してください'); return; }
   const kana = document.getElementById('person-form-kana').value.trim();
+  const youmei = document.getElementById('person-form-youmei').value.trim();
   const birthVal = document.getElementById('person-form-birth').value;
   const deathVal = document.getElementById('person-form-death').value;
   const birthYear = birthVal ? clampYear(birthVal) : null;
   const deathYear = deathVal ? clampYear(deathVal) : null;
   if (birthYear !== null && deathYear !== null && birthYear > deathYear) { alert('生年は没年より前にしてください'); return; }
+  const roles = roleDraftRows
+    .filter((r) => (r.role || '').trim())
+    .map((r) => ({
+      role: r.role.trim(),
+      startYear: r.startYear != null && r.startYear !== '' ? clampYear(r.startYear) : null,
+      endYear: r.endYear != null && r.endYear !== '' ? clampYear(r.endYear) : null,
+    }));
   let personId = editingPersonId;
   if (editingPersonId) {
     const p = personById(editingPersonId);
-    p.name = name; p.kana = kana; p.birthYear = birthYear; p.deathYear = deathYear;
+    p.name = name; p.kana = kana; p.youmei = youmei; p.roles = roles; p.birthYear = birthYear; p.deathYear = deathYear;
     await DB.updatePerson(p);
   } else {
-    personId = await DB.addPerson({ name, kana, birthYear, deathYear, createdAt: Date.now() });
+    personId = await DB.addPerson({ name, kana, youmei, roles, birthYear, deathYear, createdAt: Date.now() });
     currentPersonId = personId;
   }
   await syncSummaryRows(personId);
@@ -597,6 +646,16 @@ function wireForms() {
     renderAddPersonSelect();
   });
 
+  document.getElementById('event-form-new-person-btn').addEventListener('click', async () => {
+    const name = (prompt('新しい人物の名前を入力してください') || '').trim();
+    if (!name) return;
+    const personId = await DB.addPerson({ name, kana: '', youmei: '', roles: [], birthYear: null, deathYear: null, createdAt: Date.now() });
+    await refreshAll();
+    draftParticipants.push({ personId, status: '生存', note: '', position: null });
+    renderEventFormParticipants();
+    renderAddPersonSelect();
+  });
+
   const participantsList = document.getElementById('event-form-participants');
   participantsList.addEventListener('change', (e) => {
     const row = e.target.closest('.participant-row');
@@ -658,6 +717,38 @@ function wireForms() {
     if (!btn) return;
     summaryDraftRows = summaryDraftRows.filter((r) => r.rowId !== btn.dataset.removeSummary);
     renderSummaryList();
+  });
+
+  document.getElementById('person-role-add-btn').addEventListener('click', () => {
+    const startEl = document.getElementById('person-role-add-start');
+    const endEl = document.getElementById('person-role-add-end');
+    const nameEl = document.getElementById('person-role-add-name');
+    const role = nameEl.value.trim();
+    if (!role) return;
+    roleDraftRows.push({
+      rowId: nextRoleRowId(), role,
+      startYear: startEl.value ? clampYear(startEl.value) : null,
+      endYear: endEl.value ? clampYear(endEl.value) : null,
+    });
+    startEl.value = ''; endEl.value = ''; nameEl.value = '';
+    renderRoleList();
+  });
+
+  const roleList = document.getElementById('person-role-list');
+  roleList.addEventListener('input', (e) => {
+    const row = e.target.closest('.summary-row');
+    if (!row) return;
+    const draft = roleDraftRows.find((r) => r.rowId === row.dataset.rowId);
+    if (!draft) return;
+    if (e.target.classList.contains('pr-start')) draft.startYear = e.target.value ? clampYear(e.target.value) : null;
+    else if (e.target.classList.contains('pr-end')) draft.endYear = e.target.value ? clampYear(e.target.value) : null;
+    else if (e.target.classList.contains('pr-name')) draft.role = e.target.value;
+  });
+  roleList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-role]');
+    if (!btn) return;
+    roleDraftRows = roleDraftRows.filter((r) => r.rowId !== btn.dataset.removeRole);
+    renderRoleList();
   });
 }
 

@@ -46,6 +46,8 @@
     <div class="detail-header">
       <h2 id="person-name"></h2>
       <div class="detail-sub" id="person-kana"></div>
+      <div class="detail-sub" id="person-youmei"></div>
+      <div class="detail-sub" id="person-roles"></div>
       <div class="detail-sub" id="person-years"></div>
     </div>
     <div id="person-death-banner" class="death-banner hidden"></div>
@@ -106,8 +108,21 @@
     <div class="form-body">
       <div class="form-row"><label>名前</label><input id="person-form-name" type="text" placeholder="人物名"></div>
       <div class="form-row"><label>読み(かな・検索用、任意)</label><input id="person-form-kana" type="text" placeholder="例: やまだたろう"></div>
+      <div class="form-row"><label>幼名(任意)</label><input id="person-form-youmei" type="text" placeholder="例: 竹千代"></div>
       <div class="form-row"><label>生年(0〜3000)</label><input id="person-form-birth" type="number" min="0" max="3000" placeholder="例: 480"></div>
       <div class="form-row"><label>没年(0〜3000、存命・不明なら空欄)</label><input id="person-form-death" type="number" min="0" max="3000" placeholder="例: 540"></div>
+      <div class="section-label" style="padding-left:0;">役職(複数・期間あり可)</div>
+      <div class="form-note">同時に2つ以上持っていてもよい。終了年を空欄にすると、現在も続いている扱いになる</div>
+      <ul id="person-role-list" class="list" style="padding:0;"></ul>
+      <div class="form-row">
+        <label>役職を追加</label>
+        <div class="event-time-row">
+          <input id="person-role-add-start" type="number" min="0" max="3000" placeholder="開始年">
+          <input id="person-role-add-end" type="number" min="0" max="3000" placeholder="終了年(任意)">
+          <input id="person-role-add-name" type="text" placeholder="役職名(例: 右大臣)">
+        </div>
+      </div>
+      <button class="btn-secondary" id="person-role-add-btn" type="button">+ 役職を追加</button>
       <div class="section-label" style="padding-left:0;">概要(年表)</div>
       <div class="form-note">年月と詳細を入力すると、この人物の「出来事」として自動的に登録されます</div>
       <ul id="person-summary-list" class="list" style="padding:0;"></ul>
@@ -171,6 +186,7 @@
         <select id="event-form-add-person"></select>
       </div>
       <button class="btn-secondary" id="event-form-add-btn" type="button">+ この人物を参加者に追加</button>
+      <button class="btn-secondary" id="event-form-new-person-btn" type="button">+ 新しい人物を作って参加させる</button>
     </div>
   </section>
 
