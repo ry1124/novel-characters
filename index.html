@@ -54,15 +54,17 @@
       <div class="detail-sub" id="person-maiden-name"></div>
       <div class="detail-sub" id="person-genpuku"></div>
       <div class="detail-sub" id="person-affiliations"></div>
+      <div class="detail-sub" id="person-qualifications"></div>
+      <div class="detail-sub" id="person-medals"></div>
       <div class="detail-sub" id="person-years"></div>
     </div>
     <div id="person-death-banner" class="death-banner hidden"></div>
-    <div class="detail-actions"><button class="btn-secondary" id="person-tree-btn">家系図を見る</button></div>
+    <div class="detail-actions">
+      <button class="btn-secondary" id="person-tree-btn">家系図を見る</button>
+      <button class="btn-secondary" id="person-year-btn">年代で見る</button>
+    </div>
     <div class="section-label">役職</div>
     <ul id="person-roles-timeline" class="timeline"></ul>
-    <div class="section-label">年代で見る</div>
-    <div class="search-bar"><select id="person-year-select"></select></div>
-    <div id="person-year-result"></div>
     <div class="section-label">経歴年表</div>
     <ul id="person-timeline" class="timeline"></ul>
     <div id="person-timeline-empty" class="empty-state">この人物が参加した出来事はまだありません</div>
@@ -150,22 +152,26 @@
       <h1 style="font-size:20px;">家系図</h1>
       <div class="topbar-actions"><button class="icon-btn" id="tree-edit-btn">編集</button></div>
     </div>
-    <div class="tree-section">
-      <div class="section-label" style="padding-left:0;">両親</div>
-      <div class="tree-row" id="tree-parents"></div>
+    <div class="map-canvas-wrap"><svg id="family-tree-svg" class="map-canvas" viewBox="0 0 400 400" style="background:#f4f2fa;"></svg></div>
+    <div class="map-hint">凡例: 実線=親子、点線=配偶者。ボックスをタップするとその人物を中心に表示が切り替わります</div>
+    <div class="map-toolbar">
+      <button type="button" class="map-tool-btn" data-tree-add="father">+ 父</button>
+      <button type="button" class="map-tool-btn" data-tree-add="mother">+ 母</button>
+      <button type="button" class="map-tool-btn" data-tree-add="sibling">+ 兄弟姉妹</button>
+      <button type="button" class="map-tool-btn" data-tree-add="spouse">+ 配偶者</button>
+      <button type="button" class="map-tool-btn" data-tree-add="child">+ 子</button>
     </div>
-    <div class="tree-section">
-      <div class="section-label" style="padding-left:0;">兄弟姉妹</div>
-      <div class="tree-row" id="tree-siblings"></div>
+  </section>
+
+  <!-- ===== 人物の年代で見る ===== -->
+  <section id="view-person-year" class="view">
+    <div class="topbar">
+      <button class="icon-btn back" data-back>‹ 戻る</button>
+      <h1 style="font-size:18px;" id="person-year-view-title">年代で見る</h1>
+      <div style="width:40px;"></div>
     </div>
-    <div class="tree-section">
-      <div class="section-label" style="padding-left:0;">本人・配偶者</div>
-      <div class="tree-row" id="tree-self"></div>
-    </div>
-    <div class="tree-section">
-      <div class="section-label" style="padding-left:0;">子</div>
-      <div class="tree-row" id="tree-children"></div>
-    </div>
+    <div class="search-bar"><select id="person-year-select"></select></div>
+    <div id="person-year-result"></div>
   </section>
 
   <!-- ===== 人物 編集 ===== -->
@@ -214,14 +220,37 @@
         <div class="event-time-row">
           <input id="person-affiliation-add-start" type="number" min="0" max="3000" placeholder="開始年">
           <input id="person-affiliation-add-end" type="number" min="0" max="3000" placeholder="終了年(任意)">
-          <input id="person-affiliation-add-name" type="text" placeholder="所属名(例: ○○家)">
+          <input id="person-affiliation-add-name" type="text" list="affiliation-datalist" placeholder="所属名(例: ○○家)">
         </div>
       </div>
       <button class="btn-secondary" id="person-affiliation-add-btn" type="button">+ 所属を追加</button>
+      <div class="section-label" style="padding-left:0;">資格(複数・期間あり可)</div>
+      <div class="form-note">同時に2つ以上持っていてもよい。終了年を空欄にすると、現在も続いている扱いになる</div>
+      <ul id="person-qualification-list" class="list" style="padding:0;"></ul>
+      <div class="form-row">
+        <label>資格を追加</label>
+        <div class="event-time-row">
+          <input id="person-qualification-add-start" type="number" min="0" max="3000" placeholder="開始年">
+          <input id="person-qualification-add-end" type="number" min="0" max="3000" placeholder="終了年(任意)">
+          <input id="person-qualification-add-name" type="text" placeholder="資格名">
+        </div>
+      </div>
+      <button class="btn-secondary" id="person-qualification-add-btn" type="button">+ 資格を追加</button>
+      <div class="section-label" style="padding-left:0;">勲章(複数可)</div>
+      <ul id="person-medal-list" class="list" style="padding:0;"></ul>
+      <div class="form-row">
+        <label>勲章を追加</label>
+        <div class="event-time-row">
+          <input id="person-medal-add-start" type="number" min="0" max="3000" placeholder="授与年">
+          <input id="person-medal-add-name" type="text" placeholder="勲章名">
+        </div>
+      </div>
+      <button class="btn-secondary" id="person-medal-add-btn" type="button">+ 勲章を追加</button>
       <div class="section-label" style="padding-left:0;">家族(任意)</div>
       <div class="form-row"><label>父(名前を直接入力可。未登録の名前なら自動で人物を追加します)</label><input id="person-form-father" type="text" list="person-name-datalist" placeholder="父の名前"></div>
       <div class="form-row"><label>母(名前を直接入力可。未登録の名前なら自動で人物を追加します)</label><input id="person-form-mother" type="text" list="person-name-datalist" placeholder="母の名前"></div>
       <datalist id="person-name-datalist"></datalist>
+      <datalist id="affiliation-datalist"></datalist>
       <div class="form-note">配偶者(名前を直接入力可。未登録の名前なら自動で人物を追加します)</div>
       <ul id="person-spouse-list" class="list" style="padding:0;"></ul>
       <div class="form-row">

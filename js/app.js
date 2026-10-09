@@ -20,6 +20,7 @@ let mapDragging = null;
 let memoDetectedPersonIds = new Set();
 let spouseDraftIds = [];
 let familyTreeFocusId = null;
+let personYearFocusId = null;
 
 const STATUS_LIST = ['生存', '死亡', '負傷', '不明'];
 const STATUS_CLASS = { 生存: 'alive', 死亡: 'dead', 負傷: 'injured', 不明: 'unknown' };
@@ -161,6 +162,35 @@ function renderAffiliationList() {
     </li>`).join('');
 }
 
+// ===== 人物フォーム: 資格(複数・期間あり)編集 ===== (役職・所属と同じ要領)
+let qualificationDraftRows = [];
+let qualificationRowSeq = 0;
+function nextQualificationRowId() { return 'qualification' + (qualificationRowSeq++); }
+
+function renderQualificationList() {
+  const listEl = document.getElementById('person-qualification-list');
+  listEl.innerHTML = qualificationDraftRows.map((row) => `<li class="participant-row summary-row" data-row-id="${row.rowId}">
+      <input class="pq-start" type="number" min="0" max="3000" value="${row.startYear ?? ''}" placeholder="開始">
+      <input class="pq-end" type="number" min="0" max="3000" value="${row.endYear ?? ''}" placeholder="終了">
+      <input class="pq-name" type="text" value="${escapeHtml(row.qualification || '')}" placeholder="資格名">
+      <button type="button" class="remove-btn" data-remove-qualification="${row.rowId}">×</button>
+    </li>`).join('');
+}
+
+// ===== 人物フォーム: 勲章(複数、授与年のみ)編集 =====
+let medalDraftRows = [];
+let medalRowSeq = 0;
+function nextMedalRowId() { return 'medal' + (medalRowSeq++); }
+
+function renderMedalList() {
+  const listEl = document.getElementById('person-medal-list');
+  listEl.innerHTML = medalDraftRows.map((row) => `<li class="participant-row summary-row" data-row-id="${row.rowId}">
+      <input class="pmd-start" type="number" min="0" max="3000" value="${row.startYear ?? ''}" placeholder="授与年">
+      <input class="pmd-name" type="text" value="${escapeHtml(row.medal || '')}" placeholder="勲章名">
+      <button type="button" class="remove-btn" data-remove-medal="${row.rowId}">×</button>
+    </li>`).join('');
+}
+
 // ===== 人物フォーム: 配偶者(複数)編集 =====
 function renderSpouseList() {
   const listEl = document.getElementById('person-spouse-list');
@@ -176,6 +206,11 @@ function renderSpouseList() {
 function renderPersonNameDatalist() {
   document.getElementById('person-name-datalist').innerHTML =
     people.map((p) => `<option value="${escapeHtml(p.name)}"></option>`).join('');
+  // 他の人物が既に使っている所属名を候補に出す(新しい表記ゆれを防ぐ)
+  const affiliationNames = new Set();
+  people.forEach((p) => (p.affiliations || []).forEach((a) => { if (a.affiliation) affiliationNames.add(a.affiliation); }));
+  document.getElementById('affiliation-datalist').innerHTML =
+    Array.from(affiliationNames).map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
 }
 
 // ===== 人物フォーム: 子・養子(保存済みの人物のみ、その場で関係を更新) =====
@@ -275,6 +310,8 @@ function openPersonForm(id) {
     summaryDraftRows = loadSummaryRowsForPerson(id);
     roleDraftRows = (p.roles || []).map((r) => ({ rowId: nextRoleRowId(), role: r.role, startYear: r.startYear, endYear: r.endYear }));
     affiliationDraftRows = (p.affiliations || []).map((a) => ({ rowId: nextAffiliationRowId(), affiliation: a.affiliation, startYear: a.startYear, endYear: a.endYear }));
+    qualificationDraftRows = (p.qualifications || []).map((q) => ({ rowId: nextQualificationRowId(), qualification: q.qualification, startYear: q.startYear, endYear: q.endYear }));
+    medalDraftRows = (p.medals || []).map((m) => ({ rowId: nextMedalRowId(), medal: m.medal, startYear: m.startYear }));
     fatherEl.value = p.fatherId != null ? (personById(p.fatherId)?.name || '') : '';
     motherEl.value = p.motherId != null ? (personById(p.motherId)?.name || '') : '';
     spouseDraftIds = (p.spouseIds || []).slice();
@@ -284,6 +321,8 @@ function openPersonForm(id) {
     summaryDraftRows = [];
     roleDraftRows = [];
     affiliationDraftRows = [];
+    qualificationDraftRows = [];
+    medalDraftRows = [];
     fatherEl.value = '';
     motherEl.value = '';
     spouseDraftIds = [];
@@ -299,9 +338,16 @@ function openPersonForm(id) {
   document.getElementById('person-affiliation-add-start').value = '';
   document.getElementById('person-affiliation-add-end').value = '';
   document.getElementById('person-affiliation-add-name').value = '';
+  document.getElementById('person-qualification-add-start').value = '';
+  document.getElementById('person-qualification-add-end').value = '';
+  document.getElementById('person-qualification-add-name').value = '';
+  document.getElementById('person-medal-add-start').value = '';
+  document.getElementById('person-medal-add-name').value = '';
   renderSummaryList();
   renderRoleList();
   renderAffiliationList();
+  renderQualificationList();
+  renderMedalList();
   renderSpouseList();
   renderChildrenSection();
   navigateTo('view-edit-person');
@@ -399,8 +445,9 @@ function renderPersonDetail() {
       <div class="timeline-body"><div class="timeline-title">${escapeHtml(r.role)}</div></div>
     </li>`).join('');
   document.getElementById('person-affiliations').textContent = (p.affiliations || []).map((a) => `${a.affiliation}(${formatRolePeriod(a)})`).join('、');
+  document.getElementById('person-qualifications').textContent = (p.qualifications || []).map((q) => `${q.qualification}(${formatRolePeriod(q)})`).join('、');
+  document.getElementById('person-medals').textContent = (p.medals || []).map((m) => `${m.medal}${m.startYear != null ? `(${m.startYear}年)` : ''}`).join('、');
   document.getElementById('person-years').textContent = formatPersonYears(p);
-  renderPersonYearSelect(p);
 
   const death = getDeathInfo(p.id);
   const banner = document.getElementById('person-death-banner');
@@ -486,7 +533,8 @@ function renderEventDetail() {
     const person = pm.get(p.personId);
     const age = person ? personAgeAt(person, ev.year) : null;
     const killed = p.killedPersonId != null ? pm.get(p.killedPersonId) : null;
-    const subParts = [age !== null ? `${age}歳` : '', killed ? `${killed.name}を討ち取った` : '', p.note || ''].filter(Boolean);
+    const injured = p.injuredPersonId != null ? pm.get(p.injuredPersonId) : null;
+    const subParts = [age !== null ? `${age}歳` : '', killed ? `${killed.name}を討ち取った` : '', injured ? `${injured.name}を負傷させた` : '', p.note || ''].filter(Boolean);
     return `<li class="list-item" data-person-id="${p.personId}">
       <div class="list-item-main">
         <div class="list-item-title">${escapeHtml(person ? person.name : '(不明な人物)')}</div>
@@ -525,11 +573,13 @@ function renderEventFormParticipants() {
   listEl.innerHTML = draftParticipants.map((p) => {
     const person = pm.get(p.personId);
     const options = STATUS_LIST.map((s) => `<option value="${s}" ${s === p.status ? 'selected' : ''}>${s}</option>`).join('');
-    const killOptions = ['<option value="">討ち取った相手-</option>']
+    const otherOptionsFor = (selectedId, placeholder) => [`<option value="">${placeholder}</option>`]
       .concat(draftParticipants.filter((o) => o.personId !== p.personId).map((o) => {
         const op = pm.get(o.personId);
-        return `<option value="${o.personId}" ${p.killedPersonId === o.personId ? 'selected' : ''}>${escapeHtml(op ? op.name : '?')}</option>`;
+        return `<option value="${o.personId}" ${selectedId === o.personId ? 'selected' : ''}>${escapeHtml(op ? op.name : '?')}</option>`;
       })).join('');
+    const killOptions = otherOptionsFor(p.killedPersonId, '討ち取った相手-');
+    const injureOptions = otherOptionsFor(p.injuredPersonId, '負傷させた相手-');
     return `<li class="participant-row-wrap" data-pid="${p.personId}">
       <div class="participant-row-top">
         <div class="list-item-main">${escapeHtml(person ? person.name : '(不明)')}</div>
@@ -538,6 +588,9 @@ function renderEventFormParticipants() {
       </div>
       <div class="participant-row-bottom">
         <select class="pf-kill">${killOptions}</select>
+        <select class="pf-injure">${injureOptions}</select>
+      </div>
+      <div class="participant-row-bottom">
         <input class="pf-note" type="text" placeholder="備考" value="${escapeHtml(p.note || '')}">
       </div>
     </li>`;
@@ -697,7 +750,7 @@ async function syncSummaryRows(personId) {
     }
     const newId = await DB.addEvent({
       title: detail, year, month, endYear: null, endMonth: null, description: '',
-      terrainMap: null, participants: [{ personId, status: '生存', note: '', position: null, killedPersonId: null }],
+      terrainMap: null, participants: [{ personId, status: '生存', note: '', position: null, killedPersonId: null, injuredPersonId: null }],
       parentEventId: null,
     });
     keepEventIds.add(newId);
@@ -736,6 +789,19 @@ async function savePersonForm() {
       startYear: a.startYear != null && a.startYear !== '' ? clampYear(a.startYear) : null,
       endYear: a.endYear != null && a.endYear !== '' ? clampYear(a.endYear) : null,
     }));
+  const qualifications = qualificationDraftRows
+    .filter((q) => (q.qualification || '').trim())
+    .map((q) => ({
+      qualification: q.qualification.trim(),
+      startYear: q.startYear != null && q.startYear !== '' ? clampYear(q.startYear) : null,
+      endYear: q.endYear != null && q.endYear !== '' ? clampYear(q.endYear) : null,
+    }));
+  const medals = medalDraftRows
+    .filter((m) => (m.medal || '').trim())
+    .map((m) => ({
+      medal: m.medal.trim(),
+      startYear: m.startYear != null && m.startYear !== '' ? clampYear(m.startYear) : null,
+    }));
   const fatherNameVal = document.getElementById('person-form-father').value;
   const motherNameVal = document.getElementById('person-form-mother').value;
   const fatherId = await resolvePersonByName(fatherNameVal, editingPersonId);
@@ -747,11 +813,15 @@ async function savePersonForm() {
     const p = personById(editingPersonId);
     oldSpouseIds = p.spouseIds || [];
     p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
-    p.roles = roles; p.affiliations = affiliations; p.birthYear = birthYear; p.deathYear = deathYear;
+    p.roles = roles; p.affiliations = affiliations; p.qualifications = qualifications; p.medals = medals;
+    p.birthYear = birthYear; p.deathYear = deathYear;
     p.fatherId = fatherId; p.motherId = motherId; p.spouseIds = spouseIds;
     await DB.updatePerson(p);
   } else {
-    personId = await DB.addPerson({ name, kana, youmei, maidenName, genpukuYear, genpukuMonth, roles, affiliations, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now() });
+    personId = await DB.addPerson({
+      name, kana, youmei, maidenName, genpukuYear, genpukuMonth, roles, affiliations, qualifications, medals,
+      birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now(),
+    });
     currentPersonId = personId;
   }
   await syncSpouseLinks(personId, oldSpouseIds, spouseIds);
@@ -898,28 +968,28 @@ function createEventFromMemo() {
   document.getElementById('event-form-end-year').value = '';
   document.getElementById('event-form-end-month').value = '';
   document.getElementById('event-form-description').value = memo;
-  draftParticipants = Array.from(memoDetectedPersonIds).map((pid) => ({ personId: pid, status: '生存', note: '', position: null, killedPersonId: null }));
+  draftParticipants = Array.from(memoDetectedPersonIds).map((pid) => ({ personId: pid, status: '生存', note: '', position: null, killedPersonId: null, injuredPersonId: null }));
   renderEventFormParticipants();
   renderAddPersonSelect();
   navigateTo('view-edit-event');
 }
 
 // ===== 家系図 =====
-function treeBoxHtml(person, extraClass, subText) {
-  if (!person) return '';
-  return `<button type="button" class="tree-box ${extraClass || ''}" data-tree-person="${person.id}">
-    ${escapeHtml(person.name)}
-    ${subText ? `<div class="tree-box-sub">${escapeHtml(subText)}</div>` : ''}
-  </button>`;
-}
-
-function treeAddButtonHtml(relation, label) {
-  return `<button type="button" class="tree-box add" data-tree-add="${relation}">+ ${escapeHtml(label)}</button>`;
-}
-
 function openFamilyTree(id) {
   familyTreeFocusId = id;
   renderFamilyTree();
+}
+
+// 樹形図のボックス配置: 1行分の人物を中央(x=0)基準で横に並べた座標を返す
+const TREE_BOX_W = 92, TREE_BOX_H = 44, TREE_GAP = 14;
+function treeRowLayout(items, y) {
+  const n = items.length;
+  const totalW = n * TREE_BOX_W + Math.max(0, n - 1) * TREE_GAP;
+  const startX = -totalW / 2;
+  return items.map((person, i) => {
+    const x = startX + i * (TREE_BOX_W + TREE_GAP);
+    return { person, x, y, cx: x + TREE_BOX_W / 2, cy: y + TREE_BOX_H / 2 };
+  });
 }
 
 function renderFamilyTree() {
@@ -928,29 +998,94 @@ function renderFamilyTree() {
 
   const father = p.fatherId != null ? personById(p.fatherId) : null;
   const mother = p.motherId != null ? personById(p.motherId) : null;
-  document.getElementById('tree-parents').innerHTML =
-    (father ? treeBoxHtml(father, '', '父') : treeAddButtonHtml('father', '父を追加'))
-    + (mother ? treeBoxHtml(mother, '', '母') : treeAddButtonHtml('mother', '母を追加'));
-
   const siblings = people.filter((c) => c.id !== p.id
     && ((p.fatherId != null && c.fatherId === p.fatherId) || (p.motherId != null && c.motherId === p.motherId)));
-  document.getElementById('tree-siblings').innerHTML = siblings.map((s) => {
-    const sameFather = p.fatherId != null && s.fatherId === p.fatherId;
-    const sameMother = p.motherId != null && s.motherId === p.motherId;
-    const label = sameFather && sameMother ? '兄弟姉妹' : sameFather ? '異母兄弟姉妹' : '異父兄弟姉妹';
-    return treeBoxHtml(s, '', label);
-  }).join('') + treeAddButtonHtml('sibling', '兄弟姉妹を追加');
-
+  const selfRowPeople = siblings.concat([p]).sort((a, b) => (a.birthYear ?? 1e9) - (b.birthYear ?? 1e9));
   const spouses = (p.spouseIds || []).map((sid) => personById(sid)).filter(Boolean);
-  document.getElementById('tree-self').innerHTML = treeBoxHtml(p, 'self', formatPersonYears(p))
-    + spouses.map((sp) => treeBoxHtml(sp, '', '配偶者')).join('')
-    + treeAddButtonHtml('spouse', '配偶者を追加');
+  const bioChildren = people.filter((c) => c.fatherId === p.id || c.motherId === p.id);
+  const adoptedChildren = people.filter((c) => c.adoptiveFatherId === p.id || c.adoptiveMotherId === p.id);
+  const childrenRowPeople = bioChildren.concat(adoptedChildren);
 
-  const bioChildren = people.filter((c) => c.fatherId === p.id || c.motherId === p.id).map((c) => ({ c, label: formatPersonYears(c) }));
-  const adoptedChildren = people.filter((c) => c.adoptiveFatherId === p.id || c.adoptiveMotherId === p.id).map((c) => ({ c, label: '養子' }));
-  document.getElementById('tree-children').innerHTML =
-    bioChildren.concat(adoptedChildren).map(({ c, label }) => treeBoxHtml(c, '', label)).join('')
-    + treeAddButtonHtml('child', '子を追加');
+  const rowY = { parents: 36, mid: 190, children: 344 };
+  const parentsPos = treeRowLayout([father, mother].filter(Boolean), rowY.parents);
+  const midPos = treeRowLayout(selfRowPeople.concat(spouses), rowY.mid);
+  const childrenPos = treeRowLayout(childrenRowPeople, rowY.children);
+
+  const allX = [...parentsPos, ...midPos, ...childrenPos].map((b) => b.x);
+  const minX = allX.length ? Math.min(...allX) : -TREE_BOX_W / 2;
+  const maxX = allX.length ? Math.max(...allX) + TREE_BOX_W : TREE_BOX_W / 2;
+  const width = Math.max(maxX - minX + 80, 320);
+  const offsetX = -minX + 40;
+  const shift = (boxes) => boxes.map((b) => ({ ...b, x: b.x + offsetX, cx: b.cx + offsetX }));
+  const parentsBoxes = shift(parentsPos);
+  const midBoxes = shift(midPos);
+  const childrenBoxes = shift(childrenPos);
+
+  const svg = document.getElementById('family-tree-svg');
+  svg.setAttribute('viewBox', `0 0 ${width} 400`);
+  svg.innerHTML = '';
+  const LINE = '#b9b0d6';
+
+  const selfPeopleBoxes = midBoxes.slice(0, selfRowPeople.length);
+  if (parentsBoxes.length && selfPeopleBoxes.length) {
+    const parentMidX = (parentsBoxes[0].cx + parentsBoxes[parentsBoxes.length - 1].cx) / 2;
+    const parentBottomY = rowY.parents + TREE_BOX_H;
+    const busY = (parentBottomY + rowY.mid) / 2;
+    svg.appendChild(svgEl('line', { x1: parentMidX, y1: parentBottomY, x2: parentMidX, y2: busY, stroke: LINE, 'stroke-width': 2 }));
+    const left = selfPeopleBoxes[0].cx, right = selfPeopleBoxes[selfPeopleBoxes.length - 1].cx;
+    svg.appendChild(svgEl('line', { x1: left, y1: busY, x2: right, y2: busY, stroke: LINE, 'stroke-width': 2 }));
+    selfPeopleBoxes.forEach((b) => svg.appendChild(svgEl('line', { x1: b.cx, y1: busY, x2: b.cx, y2: rowY.mid, stroke: LINE, 'stroke-width': 2 })));
+  }
+
+  const selfIdx = selfRowPeople.findIndex((s) => s.id === p.id);
+  const selfBox = midBoxes[selfIdx];
+  const spouseBoxes = midBoxes.slice(selfRowPeople.length);
+  spouseBoxes.forEach((sb) => {
+    svg.appendChild(svgEl('line', { x1: selfBox.cx, y1: selfBox.cy, x2: sb.cx, y2: sb.cy, stroke: '#5b37b7', 'stroke-width': 2, 'stroke-dasharray': '4,3' }));
+  });
+
+  if (childrenBoxes.length) {
+    const childParentCx = spouseBoxes.length ? (selfBox.cx + spouseBoxes[0].cx) / 2 : selfBox.cx;
+    const parentBottomY2 = rowY.mid + TREE_BOX_H;
+    const busY2 = (parentBottomY2 + rowY.children) / 2;
+    svg.appendChild(svgEl('line', { x1: childParentCx, y1: parentBottomY2, x2: childParentCx, y2: busY2, stroke: LINE, 'stroke-width': 2 }));
+    const left = childrenBoxes[0].cx, right = childrenBoxes[childrenBoxes.length - 1].cx;
+    svg.appendChild(svgEl('line', { x1: left, y1: busY2, x2: right, y2: busY2, stroke: LINE, 'stroke-width': 2 }));
+    childrenBoxes.forEach((b) => svg.appendChild(svgEl('line', { x1: b.cx, y1: busY2, x2: b.cx, y2: rowY.children, stroke: LINE, 'stroke-width': 2 })));
+  }
+
+  const drawBox = (b, isSelf, subLabel) => {
+    const g = svgEl('g', { 'data-tree-person': b.person.id, style: 'cursor:pointer' });
+    g.appendChild(svgEl('rect', {
+      x: b.x, y: b.y, width: TREE_BOX_W, height: TREE_BOX_H, rx: 8,
+      fill: isSelf ? '#5b37b7' : '#ece8f6', stroke: isSelf ? '#5b37b7' : '#d8d0ef', 'stroke-width': 1.5,
+    }));
+    const text = svgEl('text', {
+      x: b.cx, y: b.cy - 2, 'text-anchor': 'middle', 'font-size': 12,
+      fill: isSelf ? '#ffffff' : '#1c1530', 'font-weight': isSelf ? 700 : 600,
+    });
+    text.textContent = b.person.name.length > 6 ? b.person.name.slice(0, 6) + '…' : b.person.name;
+    g.appendChild(text);
+    if (subLabel) {
+      const sub = svgEl('text', {
+        x: b.cx, y: b.cy + 14, 'text-anchor': 'middle', 'font-size': 9,
+        fill: isSelf ? 'rgba(255,255,255,0.85)' : '#8a84a0',
+      });
+      sub.textContent = subLabel;
+      g.appendChild(sub);
+    }
+    svg.appendChild(g);
+  };
+
+  parentsBoxes.forEach((b, i) => drawBox(b, false, i === 0 ? '父' : '母'));
+  midBoxes.forEach((b, i) => {
+    if (i < selfRowPeople.length) drawBox(b, b.person.id === p.id, b.person.id === p.id ? '' : '兄弟姉妹');
+    else drawBox(b, false, '配偶者');
+  });
+  childrenBoxes.forEach((b) => {
+    const isAdopted = adoptedChildren.some((c) => c.id === b.person.id);
+    drawBox(b, false, isAdopted ? '養子' : '');
+  });
 }
 
 // 家系図の画面から、その場で新しい人物を作って関係を結ぶ(父・母・配偶者・子)
@@ -1015,6 +1150,8 @@ function personYearRange(p) {
   if (p.deathYear != null) candidates.push(p.deathYear);
   (p.roles || []).forEach((r) => { if (r.startYear != null) candidates.push(r.startYear); if (r.endYear != null) candidates.push(r.endYear); });
   (p.affiliations || []).forEach((a) => { if (a.startYear != null) candidates.push(a.startYear); if (a.endYear != null) candidates.push(a.endYear); });
+  (p.qualifications || []).forEach((q) => { if (q.startYear != null) candidates.push(q.startYear); if (q.endYear != null) candidates.push(q.endYear); });
+  (p.medals || []).forEach((m) => { if (m.startYear != null) candidates.push(m.startYear); });
   events.filter((ev) => (ev.participants || []).some((pt) => pt.personId === p.id)).forEach((ev) => {
     candidates.push(ev.year);
     if (ev.endYear != null) candidates.push(ev.endYear);
@@ -1033,6 +1170,18 @@ function renderPersonYearSelect(p) {
   document.getElementById('person-year-result').innerHTML = '';
 }
 
+function openPersonYearView(id) {
+  personYearFocusId = id;
+  navigateTo('view-person-year');
+}
+
+function renderPersonYearView() {
+  const p = personById(personYearFocusId);
+  if (!p) { goBack(); return; }
+  document.getElementById('person-year-view-title').textContent = `${p.name}の年代`;
+  renderPersonYearSelect(p);
+}
+
 function renderPersonYearResult(p, yearVal) {
   const resultEl = document.getElementById('person-year-result');
   if (yearVal === '' || yearVal == null) { resultEl.innerHTML = ''; return; }
@@ -1040,9 +1189,15 @@ function renderPersonYearResult(p, yearVal) {
   const age = personAgeAt(p, year);
   const activeRoles = activePeriodItems(p.roles, 'role', year);
   const activeAffiliations = activePeriodItems(p.affiliations, 'affiliation', year);
+  const activeQualifications = activePeriodItems(p.qualifications, 'qualification', year);
+  const earnedMedals = (p.medals || []).filter((m) => m.startYear != null && m.startYear <= year).map((m) => m.medal);
   const yearEvents = events.filter((ev) => (ev.participants || []).some((pt) => pt.personId === p.id) && yearWithinEvent(ev, year))
     .sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
-  const subParts = [age !== null ? `${age}歳` : '', activeRoles.join('・'), activeAffiliations.join('・')].filter(Boolean);
+  const subParts = [
+    age !== null ? `${age}歳` : '', activeRoles.join('・'), activeAffiliations.join('・'),
+    activeQualifications.length ? `資格:${activeQualifications.join('・')}` : '',
+    earnedMedals.length ? `勲章:${earnedMedals.join('・')}` : '',
+  ].filter(Boolean);
   resultEl.innerHTML = `
     <div class="detail-sub">${escapeHtml(subParts.join(' ・ ') || 'この年についての情報はありません')}</div>
     <ul class="timeline" style="padding:0;">
@@ -1104,6 +1259,7 @@ const RENDER_FNS = {
   'view-memo-import': openMemoImport,
   'view-family-tree': renderFamilyTree,
   'view-year-lookup': renderYearLookup,
+  'view-person-year': renderPersonYearView,
 };
 
 function wireNav() {
@@ -1152,7 +1308,7 @@ function wireDetailActions() {
   document.getElementById('person-edit-btn').addEventListener('click', () => openPersonForm(currentPersonId));
   document.getElementById('person-delete-btn').addEventListener('click', () => askConfirm(() => deletePerson(currentPersonId)));
   document.getElementById('person-year-select').addEventListener('change', (e) => {
-    const p = personById(currentPersonId);
+    const p = personById(personYearFocusId);
     if (p) renderPersonYearResult(p, e.target.value);
   });
   document.getElementById('person-year-result').addEventListener('click', (e) => {
@@ -1164,6 +1320,7 @@ function wireDetailActions() {
   document.getElementById('event-map-btn').addEventListener('click', () => { mapEditingEventId = currentEventId; navigateTo('view-event-map-editor'); });
   document.getElementById('event-add-child-btn').addEventListener('click', () => openEventForm(null, currentEventId));
   document.getElementById('person-tree-btn').addEventListener('click', () => { familyTreeFocusId = currentPersonId; navigateTo('view-family-tree'); });
+  document.getElementById('person-year-btn').addEventListener('click', () => openPersonYearView(currentPersonId));
   document.getElementById('tree-edit-btn').addEventListener('click', () => openPersonForm(familyTreeFocusId));
   document.getElementById('view-family-tree').addEventListener('click', (e) => {
     const addBtn = e.target.closest('[data-tree-add]');
@@ -1187,7 +1344,7 @@ function wireForms() {
     const sel = document.getElementById('event-form-add-person');
     const personId = Number(sel.value);
     if (!personId || draftParticipants.some((p) => p.personId === personId)) return;
-    draftParticipants.push({ personId, status: '生存', note: '', position: null, killedPersonId: null });
+    draftParticipants.push({ personId, status: '生存', note: '', position: null, killedPersonId: null, injuredPersonId: null });
     renderEventFormParticipants();
     renderAddPersonSelect();
   });
@@ -1197,7 +1354,7 @@ function wireForms() {
     if (!name) return;
     const personId = await DB.addPerson({ name, kana: '', youmei: '', roles: [], birthYear: null, deathYear: null, createdAt: Date.now() });
     await refreshAll();
-    draftParticipants.push({ personId, status: '生存', note: '', position: null, killedPersonId: null });
+    draftParticipants.push({ personId, status: '生存', note: '', position: null, killedPersonId: null, injuredPersonId: null });
     renderEventFormParticipants();
     renderAddPersonSelect();
   });
@@ -1219,6 +1376,15 @@ function wireForms() {
         if (victim) victim.status = '死亡';
       }
       renderEventFormParticipants(); // 相手側のステータス表示を更新するため再描画
+      return;
+    } else if (e.target.classList.contains('pf-injure')) {
+      draft.injuredPersonId = e.target.value ? Number(e.target.value) : null;
+      if (draft.injuredPersonId !== null) {
+        // 「負傷させた相手」を選ぶと、その相手の状態を自動で「負傷」にする(すでに死亡扱いなら上書きしない)
+        const injured = draftParticipants.find((p) => p.personId === draft.injuredPersonId);
+        if (injured && injured.status !== '死亡') injured.status = '負傷';
+      }
+      renderEventFormParticipants();
       return;
     }
   });
@@ -1339,6 +1505,64 @@ function wireForms() {
     if (!btn) return;
     affiliationDraftRows = affiliationDraftRows.filter((a) => a.rowId !== btn.dataset.removeAffiliation);
     renderAffiliationList();
+  });
+
+  document.getElementById('person-qualification-add-btn').addEventListener('click', () => {
+    const startEl = document.getElementById('person-qualification-add-start');
+    const endEl = document.getElementById('person-qualification-add-end');
+    const nameEl = document.getElementById('person-qualification-add-name');
+    const qualification = nameEl.value.trim();
+    if (!qualification) return;
+    qualificationDraftRows.push({
+      rowId: nextQualificationRowId(), qualification,
+      startYear: startEl.value ? clampYear(startEl.value) : null,
+      endYear: endEl.value ? clampYear(endEl.value) : null,
+    });
+    startEl.value = ''; endEl.value = ''; nameEl.value = '';
+    renderQualificationList();
+  });
+
+  const qualificationList = document.getElementById('person-qualification-list');
+  qualificationList.addEventListener('input', (e) => {
+    const row = e.target.closest('.summary-row');
+    if (!row) return;
+    const draft = qualificationDraftRows.find((q) => q.rowId === row.dataset.rowId);
+    if (!draft) return;
+    if (e.target.classList.contains('pq-start')) draft.startYear = e.target.value ? clampYear(e.target.value) : null;
+    else if (e.target.classList.contains('pq-end')) draft.endYear = e.target.value ? clampYear(e.target.value) : null;
+    else if (e.target.classList.contains('pq-name')) draft.qualification = e.target.value;
+  });
+  qualificationList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-qualification]');
+    if (!btn) return;
+    qualificationDraftRows = qualificationDraftRows.filter((q) => q.rowId !== btn.dataset.removeQualification);
+    renderQualificationList();
+  });
+
+  document.getElementById('person-medal-add-btn').addEventListener('click', () => {
+    const startEl = document.getElementById('person-medal-add-start');
+    const nameEl = document.getElementById('person-medal-add-name');
+    const medal = nameEl.value.trim();
+    if (!medal) return;
+    medalDraftRows.push({ rowId: nextMedalRowId(), medal, startYear: startEl.value ? clampYear(startEl.value) : null });
+    startEl.value = ''; nameEl.value = '';
+    renderMedalList();
+  });
+
+  const medalList = document.getElementById('person-medal-list');
+  medalList.addEventListener('input', (e) => {
+    const row = e.target.closest('.summary-row');
+    if (!row) return;
+    const draft = medalDraftRows.find((m) => m.rowId === row.dataset.rowId);
+    if (!draft) return;
+    if (e.target.classList.contains('pmd-start')) draft.startYear = e.target.value ? clampYear(e.target.value) : null;
+    else if (e.target.classList.contains('pmd-name')) draft.medal = e.target.value;
+  });
+  medalList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-medal]');
+    if (!btn) return;
+    medalDraftRows = medalDraftRows.filter((m) => m.rowId !== btn.dataset.removeMedal);
+    renderMedalList();
   });
 
   document.getElementById('person-spouse-add-btn').addEventListener('click', async () => {
