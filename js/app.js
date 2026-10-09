@@ -1230,24 +1230,22 @@ function renderFamilyTree() {
   const p = personById(familyTreeFocusId);
   if (!p) { goBack(); return; }
 
-  // 親は実親が未登録なら養親で代用して表示する(養子側から見た時に親が出ないのを防ぐ)
-  const fatherId = p.fatherId ?? p.adoptiveFatherId ?? null;
-  const motherId = p.motherId ?? p.adoptiveMotherId ?? null;
-  const isAdoptiveFather = p.fatherId == null && p.adoptiveFatherId != null;
-  const isAdoptiveMother = p.motherId == null && p.adoptiveMotherId != null;
-  const father = fatherId != null ? personById(fatherId) : null;
-  const mother = motherId != null ? personById(motherId) : null;
+  // 実親・養親は両方いる場合は両方表示する(片方しかいない場合はその片方だけ出す)
+  const father = p.fatherId != null ? personById(p.fatherId) : null;
+  const mother = p.motherId != null ? personById(p.motherId) : null;
+  const adoptiveFather = p.adoptiveFatherId != null ? personById(p.adoptiveFatherId) : null;
+  const adoptiveMother = p.adoptiveMotherId != null ? personById(p.adoptiveMotherId) : null;
   const parentEntries = [
-    father ? { person: father, label: isAdoptiveFather ? '養父' : '父' } : null,
-    mother ? { person: mother, label: isAdoptiveMother ? '養母' : '母' } : null,
+    father ? { person: father, label: '父' } : null,
+    adoptiveFather ? { person: adoptiveFather, label: '養父' } : null,
+    mother ? { person: mother, label: '母' } : null,
+    adoptiveMother ? { person: adoptiveMother, label: '養母' } : null,
   ].filter(Boolean);
 
-  // 兄弟姉妹は実親・養親のどちらか一致でも検出する
-  const effFatherId = (x) => x.fatherId ?? x.adoptiveFatherId ?? null;
-  const effMotherId = (x) => x.motherId ?? x.adoptiveMotherId ?? null;
-  const pEffFatherId = effFatherId(p), pEffMotherId = effMotherId(p);
-  const siblings = people.filter((c) => c.id !== p.id
-    && ((pEffFatherId != null && effFatherId(c) === pEffFatherId) || (pEffMotherId != null && effMotherId(c) === pEffMotherId)));
+  // 兄弟姉妹は、実親・養親のいずれかを1人でも共有していれば検出する(全血/異母/異父/養子同士も含む)
+  const parentIdsOf = (x) => [x.fatherId, x.motherId, x.adoptiveFatherId, x.adoptiveMotherId].filter((id) => id != null);
+  const pParentIds = new Set(parentIdsOf(p));
+  const siblings = people.filter((c) => c.id !== p.id && parentIdsOf(c).some((id) => pParentIds.has(id)));
   // 本人も兄弟姉妹と同じ基準(誕生年、年長が左)で並べる。生年未登録は年少側(右)扱い
   const selfRowPeople = [...siblings, p].sort((a, b) => (a.birthYear ?? 1e9) - (b.birthYear ?? 1e9));
   const spouses = (p.spouseIds || []).map((sid) => personById(sid)).filter(Boolean);
@@ -1369,6 +1367,14 @@ async function treeAddPerson(relation) {
   } else if (relation === 'mother') {
     const newId = await DB.addPerson(base);
     focus.motherId = newId;
+    await DB.updatePerson(focus);
+  } else if (relation === 'adoptiveFather') {
+    const newId = await DB.addPerson(base);
+    focus.adoptiveFatherId = newId;
+    await DB.updatePerson(focus);
+  } else if (relation === 'adoptiveMother') {
+    const newId = await DB.addPerson(base);
+    focus.adoptiveMotherId = newId;
     await DB.updatePerson(focus);
   } else if (relation === 'spouse') {
     const newId = await DB.addPerson({ ...base, spouseIds: [focus.id] });
