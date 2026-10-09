@@ -144,6 +144,22 @@ function renderRoleList() {
     </li>`).join('');
 }
 
+// ===== 人物フォーム: 所属(複数・期間あり)編集 =====
+// 役職と同じ要領で、人物に直接 {affiliation, startYear, endYear} の配列として持たせる
+let affiliationDraftRows = [];
+let affiliationRowSeq = 0;
+function nextAffiliationRowId() { return 'affiliation' + (affiliationRowSeq++); }
+
+function renderAffiliationList() {
+  const listEl = document.getElementById('person-affiliation-list');
+  listEl.innerHTML = affiliationDraftRows.map((row) => `<li class="participant-row summary-row" data-row-id="${row.rowId}">
+      <input class="pa-start" type="number" min="0" max="3000" value="${row.startYear ?? ''}" placeholder="開始">
+      <input class="pa-end" type="number" min="0" max="3000" value="${row.endYear ?? ''}" placeholder="終了">
+      <input class="pa-name" type="text" value="${escapeHtml(row.affiliation || '')}" placeholder="所属名">
+      <button type="button" class="remove-btn" data-remove-affiliation="${row.rowId}">×</button>
+    </li>`).join('');
+}
+
 // ===== 人物フォーム: 配偶者(複数)編集 =====
 function renderSpouseList() {
   const listEl = document.getElementById('person-spouse-list');
@@ -165,10 +181,23 @@ function renderSpouseAddSelect() {
     : '<option value="">(追加できる人物がいません)</option>';
 }
 
-function personSelectOptions(excludeId, selectedId) {
-  const opts = people.filter((p) => p.id !== excludeId)
-    .map((p) => `<option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
-  return '<option value="">未設定</option>' + opts;
+function renderPersonNameDatalist() {
+  document.getElementById('person-name-datalist').innerHTML =
+    people.map((p) => `<option value="${escapeHtml(p.name)}"></option>`).join('');
+}
+
+// 父・母の欄に入力された名前から人物を探し、見つからなければその場で新しい人物を作る
+async function resolvePersonByName(name, excludeId) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return null;
+  const existing = people.find((p) => p.name === trimmed && p.id !== excludeId);
+  if (existing) return existing.id;
+  const newId = await DB.addPerson({
+    name: trimmed, kana: '', youmei: '', maidenName: '', genpukuYear: null, genpukuMonth: null,
+    roles: [], affiliations: [], birthYear: null, deathYear: null, fatherId: null, motherId: null, spouseIds: [], createdAt: Date.now(),
+  });
+  people.push({ id: newId, name: trimmed, roles: [], affiliations: [], spouseIds: [] }); // 同じ保存処理内での重複作成を防ぐ(refreshAllで正しい内容に置き換わる)
+  return newId;
 }
 
 function openPersonForm(id) {
@@ -195,18 +224,21 @@ function openPersonForm(id) {
     deathEl.value = p.deathYear ?? '';
     summaryDraftRows = loadSummaryRowsForPerson(id);
     roleDraftRows = (p.roles || []).map((r) => ({ rowId: nextRoleRowId(), role: r.role, startYear: r.startYear, endYear: r.endYear }));
-    fatherEl.innerHTML = personSelectOptions(id, p.fatherId);
-    motherEl.innerHTML = personSelectOptions(id, p.motherId);
+    affiliationDraftRows = (p.affiliations || []).map((a) => ({ rowId: nextAffiliationRowId(), affiliation: a.affiliation, startYear: a.startYear, endYear: a.endYear }));
+    fatherEl.value = p.fatherId != null ? (personById(p.fatherId)?.name || '') : '';
+    motherEl.value = p.motherId != null ? (personById(p.motherId)?.name || '') : '';
     spouseDraftIds = (p.spouseIds || []).slice();
   } else {
     nameEl.value = ''; kanaEl.value = ''; youmeiEl.value = ''; maidenNameEl.value = '';
     genpukuYearEl.value = ''; genpukuMonthEl.value = ''; birthEl.value = ''; deathEl.value = '';
     summaryDraftRows = [];
     roleDraftRows = [];
-    fatherEl.innerHTML = personSelectOptions(null, null);
-    motherEl.innerHTML = personSelectOptions(null, null);
+    affiliationDraftRows = [];
+    fatherEl.value = '';
+    motherEl.value = '';
     spouseDraftIds = [];
   }
+  renderPersonNameDatalist();
   summaryOriginalEventIds = summaryDraftRows.map((r) => r.eventId);
   document.getElementById('person-summary-add-year').value = '';
   document.getElementById('person-summary-add-month').value = '';
@@ -214,8 +246,12 @@ function openPersonForm(id) {
   document.getElementById('person-role-add-start').value = '';
   document.getElementById('person-role-add-end').value = '';
   document.getElementById('person-role-add-name').value = '';
+  document.getElementById('person-affiliation-add-start').value = '';
+  document.getElementById('person-affiliation-add-end').value = '';
+  document.getElementById('person-affiliation-add-name').value = '';
   renderSummaryList();
   renderRoleList();
+  renderAffiliationList();
   renderSpouseList();
   navigateTo('view-edit-person');
 }
@@ -255,7 +291,8 @@ function renderSearch() {
   if (!q) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); emptyEl.textContent = '名前を入力すると、人物の経歴を検索できます'; return; }
   const hits = people.filter((p) => (p.name || '').toLowerCase().includes(q) || (p.kana || '').toLowerCase().includes(q)
     || (p.youmei || '').toLowerCase().includes(q) || (p.maidenName || '').toLowerCase().includes(q)
-    || (p.roles || []).some((r) => (r.role || '').toLowerCase().includes(q)));
+    || (p.roles || []).some((r) => (r.role || '').toLowerCase().includes(q))
+    || (p.affiliations || []).some((a) => (a.affiliation || '').toLowerCase().includes(q)));
   if (!hits.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); emptyEl.textContent = '該当する人物が見つかりません'; return; }
   emptyEl.classList.add('hidden');
   listEl.innerHTML = hits.map((p) => personListItemHtml(p)).join('');
@@ -301,6 +338,7 @@ function renderPersonDetail() {
   document.getElementById('person-maiden-name').textContent = p.maidenName ? `旧姓: ${p.maidenName}` : '';
   document.getElementById('person-genpuku').textContent = p.genpukuYear != null ? `元服: ${formatYearMonth(p.genpukuYear, p.genpukuMonth)}` : '';
   document.getElementById('person-roles').textContent = (p.roles || []).map((r) => `${r.role}(${formatRolePeriod(r)})`).join('、');
+  document.getElementById('person-affiliations').textContent = (p.affiliations || []).map((a) => `${a.affiliation}(${formatRolePeriod(a)})`).join('、');
   document.getElementById('person-years').textContent = formatPersonYears(p);
 
   const death = getDeathInfo(p.id);
@@ -608,10 +646,17 @@ async function savePersonForm() {
       startYear: r.startYear != null && r.startYear !== '' ? clampYear(r.startYear) : null,
       endYear: r.endYear != null && r.endYear !== '' ? clampYear(r.endYear) : null,
     }));
-  const fatherVal = document.getElementById('person-form-father').value;
-  const motherVal = document.getElementById('person-form-mother').value;
-  const fatherId = fatherVal ? Number(fatherVal) : null;
-  const motherId = motherVal ? Number(motherVal) : null;
+  const affiliations = affiliationDraftRows
+    .filter((a) => (a.affiliation || '').trim())
+    .map((a) => ({
+      affiliation: a.affiliation.trim(),
+      startYear: a.startYear != null && a.startYear !== '' ? clampYear(a.startYear) : null,
+      endYear: a.endYear != null && a.endYear !== '' ? clampYear(a.endYear) : null,
+    }));
+  const fatherNameVal = document.getElementById('person-form-father').value;
+  const motherNameVal = document.getElementById('person-form-mother').value;
+  const fatherId = await resolvePersonByName(fatherNameVal, editingPersonId);
+  const motherId = await resolvePersonByName(motherNameVal, editingPersonId);
   const spouseIds = spouseDraftIds.slice();
   let personId = editingPersonId;
   let oldSpouseIds = [];
@@ -619,11 +664,11 @@ async function savePersonForm() {
     const p = personById(editingPersonId);
     oldSpouseIds = p.spouseIds || [];
     p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
-    p.roles = roles; p.birthYear = birthYear; p.deathYear = deathYear;
+    p.roles = roles; p.affiliations = affiliations; p.birthYear = birthYear; p.deathYear = deathYear;
     p.fatherId = fatherId; p.motherId = motherId; p.spouseIds = spouseIds;
     await DB.updatePerson(p);
   } else {
-    personId = await DB.addPerson({ name, kana, youmei, maidenName, genpukuYear, genpukuMonth, roles, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now() });
+    personId = await DB.addPerson({ name, kana, youmei, maidenName, genpukuYear, genpukuMonth, roles, affiliations, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now() });
     currentPersonId = personId;
   }
   await syncSpouseLinks(personId, oldSpouseIds, spouseIds);
@@ -1033,6 +1078,38 @@ function wireForms() {
     if (!btn) return;
     roleDraftRows = roleDraftRows.filter((r) => r.rowId !== btn.dataset.removeRole);
     renderRoleList();
+  });
+
+  document.getElementById('person-affiliation-add-btn').addEventListener('click', () => {
+    const startEl = document.getElementById('person-affiliation-add-start');
+    const endEl = document.getElementById('person-affiliation-add-end');
+    const nameEl = document.getElementById('person-affiliation-add-name');
+    const affiliation = nameEl.value.trim();
+    if (!affiliation) return;
+    affiliationDraftRows.push({
+      rowId: nextAffiliationRowId(), affiliation,
+      startYear: startEl.value ? clampYear(startEl.value) : null,
+      endYear: endEl.value ? clampYear(endEl.value) : null,
+    });
+    startEl.value = ''; endEl.value = ''; nameEl.value = '';
+    renderAffiliationList();
+  });
+
+  const affiliationList = document.getElementById('person-affiliation-list');
+  affiliationList.addEventListener('input', (e) => {
+    const row = e.target.closest('.summary-row');
+    if (!row) return;
+    const draft = affiliationDraftRows.find((a) => a.rowId === row.dataset.rowId);
+    if (!draft) return;
+    if (e.target.classList.contains('pa-start')) draft.startYear = e.target.value ? clampYear(e.target.value) : null;
+    else if (e.target.classList.contains('pa-end')) draft.endYear = e.target.value ? clampYear(e.target.value) : null;
+    else if (e.target.classList.contains('pa-name')) draft.affiliation = e.target.value;
+  });
+  affiliationList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-affiliation]');
+    if (!btn) return;
+    affiliationDraftRows = affiliationDraftRows.filter((a) => a.rowId !== btn.dataset.removeAffiliation);
+    renderAffiliationList();
   });
 
   document.getElementById('person-spouse-add-btn').addEventListener('click', () => {

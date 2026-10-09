@@ -54,6 +54,7 @@
       <div class="detail-sub" id="person-maiden-name"></div>
       <div class="detail-sub" id="person-genpuku"></div>
       <div class="detail-sub" id="person-roles"></div>
+      <div class="detail-sub" id="person-affiliations"></div>
       <div class="detail-sub" id="person-years"></div>
     </div>
     <div id="person-death-banner" class="death-banner hidden"></div>
@@ -194,9 +195,22 @@
         </div>
       </div>
       <button class="btn-secondary" id="person-role-add-btn" type="button">+ 役職を追加</button>
+      <div class="section-label" style="padding-left:0;">所属(複数・期間あり可)</div>
+      <div class="form-note">同時に2つ以上持っていてもよい。終了年を空欄にすると、現在も続いている扱いになる</div>
+      <ul id="person-affiliation-list" class="list" style="padding:0;"></ul>
+      <div class="form-row">
+        <label>所属を追加</label>
+        <div class="event-time-row">
+          <input id="person-affiliation-add-start" type="number" min="0" max="3000" placeholder="開始年">
+          <input id="person-affiliation-add-end" type="number" min="0" max="3000" placeholder="終了年(任意)">
+          <input id="person-affiliation-add-name" type="text" placeholder="所属名(例: ○○家)">
+        </div>
+      </div>
+      <button class="btn-secondary" id="person-affiliation-add-btn" type="button">+ 所属を追加</button>
       <div class="section-label" style="padding-left:0;">家族(任意)</div>
-      <div class="form-row"><label>父</label><select id="person-form-father"></select></div>
-      <div class="form-row"><label>母</label><select id="person-form-mother"></select></div>
+      <div class="form-row"><label>父(名前を直接入力可。未登録の名前なら自動で人物を追加します)</label><input id="person-form-father" type="text" list="person-name-datalist" placeholder="父の名前"></div>
+      <div class="form-row"><label>母(名前を直接入力可。未登録の名前なら自動で人物を追加します)</label><input id="person-form-mother" type="text" list="person-name-datalist" placeholder="母の名前"></div>
+      <datalist id="person-name-datalist"></datalist>
       <div class="form-note">子は、子となる人物側で「父」「母」にこの人物を指定すると自動的に反映されます</div>
       <ul id="person-spouse-list" class="list" style="padding:0;"></ul>
       <div class="form-row">
