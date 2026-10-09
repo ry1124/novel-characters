@@ -76,6 +76,10 @@ function isPersonDead(p) {
 // ===== 画面遷移 =====
 function applyView(viewId) {
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === viewId));
+  // .viewはdisplay:noneで隠すだけで要素は再利用されるため、スクロール位置が残ったままになる。
+  // 残っていると、sticky表示のtopbarの下にフィルターや一覧の先頭が隠れて「見えない」ように見えるため、毎回先頭へ戻す
+  const el = document.getElementById(viewId);
+  if (el) el.scrollTop = 0;
   const renderFn = RENDER_FNS[viewId];
   if (renderFn) renderFn();
 }
@@ -196,6 +200,32 @@ function renderMedalList() {
     </li>`).join('');
 }
 
+// ===== 人物フォーム: 能力(複数、名前のみ)編集 =====
+let abilityDraftRows = [];
+let abilityRowSeq = 0;
+function nextAbilityRowId() { return 'ability' + (abilityRowSeq++); }
+
+function renderAbilityList() {
+  const listEl = document.getElementById('person-ability-list');
+  listEl.innerHTML = abilityDraftRows.map((row) => `<li class="participant-row summary-row" data-row-id="${row.rowId}">
+      <input class="pab-name" type="text" value="${escapeHtml(row.ability || '')}" placeholder="能力名">
+      <button type="button" class="remove-btn" data-remove-ability="${row.rowId}">×</button>
+    </li>`).join('');
+}
+
+// ===== 人物フォーム: 技(複数、名前のみ)編集 =====
+let skillDraftRows = [];
+let skillRowSeq = 0;
+function nextSkillRowId() { return 'skill' + (skillRowSeq++); }
+
+function renderSkillList() {
+  const listEl = document.getElementById('person-skill-list');
+  listEl.innerHTML = skillDraftRows.map((row) => `<li class="participant-row summary-row" data-row-id="${row.rowId}">
+      <input class="psk-name" type="text" value="${escapeHtml(row.skill || '')}" placeholder="技名">
+      <button type="button" class="remove-btn" data-remove-skill="${row.rowId}">×</button>
+    </li>`).join('');
+}
+
 // ===== 人物フォーム: 配偶者(複数)編集 =====
 function renderSpouseList() {
   const listEl = document.getElementById('person-spouse-list');
@@ -216,6 +246,10 @@ function renderPersonNameDatalist() {
   people.forEach((p) => (p.affiliations || []).forEach((a) => { if (a.affiliation) affiliationNames.add(a.affiliation); }));
   document.getElementById('affiliation-datalist').innerHTML =
     Array.from(affiliationNames).map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
+  const roleNames = new Set();
+  people.forEach((p) => (p.roles || []).forEach((r) => { if (r.role) roleNames.add(r.role); }));
+  document.getElementById('role-datalist').innerHTML =
+    Array.from(roleNames).map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
 }
 
 // ===== 人物フォーム: 子・養子(保存済みの人物のみ、その場で関係を更新) =====
@@ -317,6 +351,8 @@ function openPersonForm(id) {
     affiliationDraftRows = (p.affiliations || []).map((a) => ({ rowId: nextAffiliationRowId(), affiliation: a.affiliation, startYear: a.startYear, endYear: a.endYear }));
     qualificationDraftRows = (p.qualifications || []).map((q) => ({ rowId: nextQualificationRowId(), qualification: q.qualification, startYear: q.startYear, endYear: q.endYear }));
     medalDraftRows = (p.medals || []).map((m) => ({ rowId: nextMedalRowId(), medal: m.medal, startYear: m.startYear }));
+    abilityDraftRows = (p.abilities || []).map((a) => ({ rowId: nextAbilityRowId(), ability: a.ability }));
+    skillDraftRows = (p.skills || []).map((s) => ({ rowId: nextSkillRowId(), skill: s.skill }));
     fatherEl.value = p.fatherId != null ? (personById(p.fatherId)?.name || '') : '';
     motherEl.value = p.motherId != null ? (personById(p.motherId)?.name || '') : '';
     spouseDraftIds = (p.spouseIds || []).slice();
@@ -328,6 +364,8 @@ function openPersonForm(id) {
     affiliationDraftRows = [];
     qualificationDraftRows = [];
     medalDraftRows = [];
+    abilityDraftRows = [];
+    skillDraftRows = [];
     fatherEl.value = '';
     motherEl.value = '';
     spouseDraftIds = [];
@@ -353,6 +391,8 @@ function openPersonForm(id) {
   renderAffiliationList();
   renderQualificationList();
   renderMedalList();
+  renderAbilityList();
+  renderSkillList();
   renderSpouseList();
   renderChildrenSection();
   navigateTo('view-edit-person');
@@ -401,7 +441,9 @@ function renderSearch() {
   const hits = people.filter((p) => (p.name || '').toLowerCase().includes(q) || (p.kana || '').toLowerCase().includes(q)
     || (p.youmei || '').toLowerCase().includes(q) || (p.maidenName || '').toLowerCase().includes(q)
     || (p.roles || []).some((r) => (r.role || '').toLowerCase().includes(q))
-    || (p.affiliations || []).some((a) => (a.affiliation || '').toLowerCase().includes(q)));
+    || (p.affiliations || []).some((a) => (a.affiliation || '').toLowerCase().includes(q))
+    || (p.abilities || []).some((a) => (a.ability || '').toLowerCase().includes(q))
+    || (p.skills || []).some((s) => (s.skill || '').toLowerCase().includes(q)));
   if (!hits.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); emptyEl.textContent = '該当する人物が見つかりません'; return; }
   emptyEl.classList.add('hidden');
   listEl.innerHTML = hits.map((p) => personListItemHtml(p)).join('');
@@ -454,6 +496,8 @@ function renderPersonDetail() {
   document.getElementById('person-affiliations').textContent = (p.affiliations || []).map((a) => `${a.affiliation}(${formatRolePeriod(a)})`).join('、');
   document.getElementById('person-qualifications').textContent = (p.qualifications || []).map((q) => `${q.qualification}(${formatRolePeriod(q)})`).join('、');
   document.getElementById('person-medals').textContent = (p.medals || []).map((m) => `${m.medal}${m.startYear != null ? `(${m.startYear}年)` : ''}`).join('、');
+  document.getElementById('person-abilities').textContent = (p.abilities || []).length ? `能力: ${(p.abilities || []).map((a) => a.ability).join('、')}` : '';
+  document.getElementById('person-skills').textContent = (p.skills || []).length ? `技: ${(p.skills || []).map((s) => s.skill).join('、')}` : '';
   document.getElementById('person-years').textContent = formatPersonYears(p);
 
   const death = getDeathInfo(p.id);
@@ -573,6 +617,62 @@ function renderEventDetail() {
         <div class="list-item-sub">${formatEventTime(c)} ・ 参加者${(c.participants || []).length}人</div>
       </div>
       <span class="list-item-chevron">›</span>
+    </li>`).join('');
+}
+
+// ===== 役職一覧(人物を横断して、役職名ごとにグループ表示) =====
+function renderRoles() {
+  const q = (document.getElementById('roles-search-input').value || '').trim().toLowerCase();
+  const groups = new Map();
+  people.forEach((p) => (p.roles || []).forEach((r) => {
+    if (!r.role) return;
+    if (!groups.has(r.role)) groups.set(r.role, []);
+    groups.get(r.role).push({ person: p, startYear: r.startYear, endYear: r.endYear });
+  }));
+  const hadAny = groups.size > 0;
+  let names = [...groups.keys()];
+  if (q) names = names.filter((n) => n.toLowerCase().includes(q));
+  names.sort((a, b) => a.localeCompare(b, 'ja'));
+  const emptyEl = document.getElementById('roles-empty');
+  const listEl = document.getElementById('roles-list');
+  if (!names.length) {
+    listEl.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+    emptyEl.textContent = hadAny ? '該当する役職が見つかりません' : 'まだ役職が登録されていません';
+    return;
+  }
+  emptyEl.classList.add('hidden');
+  listEl.innerHTML = names.map((name) => {
+    const rows = groups.get(name).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+    const rowsHtml = rows.map((row) => `<li class="list-item list-item-indent" data-person-id="${row.person.id}">
+        <div class="list-item-main">
+          <div class="list-item-title">${escapeHtml(row.person.name)}</div>
+          <div class="list-item-sub">${formatRolePeriod(row)}</div>
+        </div>
+        <span class="list-item-chevron">›</span>
+      </li>`).join('');
+    return `<li class="list-group-header">${escapeHtml(name)}(${rows.length}人)</li>${rowsHtml}`;
+  }).join('');
+}
+
+// ===== 役職の一括追加: 1つの役職を、複数人物にまとめて付与する =====
+let bulkRoleCheckedIds = new Set();
+function openBulkRoleForm() {
+  document.getElementById('bulk-role-name').value = '';
+  document.getElementById('bulk-role-start').value = '';
+  document.getElementById('bulk-role-end').value = '';
+  document.getElementById('bulk-role-person-search').value = '';
+  bulkRoleCheckedIds = new Set();
+  renderBulkRolePersonList();
+}
+function renderBulkRolePersonList() {
+  const q = (document.getElementById('bulk-role-person-search').value || '').trim().toLowerCase();
+  const listEl = document.getElementById('bulk-role-person-list');
+  const filtered = q ? people.filter((p) => (p.name || '').toLowerCase().includes(q)) : people;
+  const sorted = filtered.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
+  listEl.innerHTML = sorted.map((p) => `<li class="list-item list-item-check" data-person-id="${p.id}">
+      <input type="checkbox" class="bulk-role-check" data-person-id="${p.id}" ${bulkRoleCheckedIds.has(p.id) ? 'checked' : ''}>
+      <div class="list-item-main"><div class="list-item-title">${escapeHtml(p.name)}</div></div>
     </li>`).join('');
 }
 
@@ -825,6 +925,12 @@ async function savePersonForm() {
       medal: m.medal.trim(),
       startYear: m.startYear != null && m.startYear !== '' ? clampYear(m.startYear) : null,
     }));
+  const abilities = abilityDraftRows
+    .filter((a) => (a.ability || '').trim())
+    .map((a) => ({ ability: a.ability.trim() }));
+  const skills = skillDraftRows
+    .filter((s) => (s.skill || '').trim())
+    .map((s) => ({ skill: s.skill.trim() }));
   const fatherNameVal = document.getElementById('person-form-father').value;
   const motherNameVal = document.getElementById('person-form-mother').value;
   const fatherId = await resolvePersonByName(fatherNameVal, editingPersonId);
@@ -837,13 +943,14 @@ async function savePersonForm() {
     oldSpouseIds = p.spouseIds || [];
     p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
     p.roles = roles; p.affiliations = affiliations; p.qualifications = qualifications; p.medals = medals;
+    p.abilities = abilities; p.skills = skills;
     p.birthYear = birthYear; p.deathYear = deathYear;
     p.fatherId = fatherId; p.motherId = motherId; p.spouseIds = spouseIds;
     await DB.updatePerson(p);
   } else {
     personId = await DB.addPerson({
       name, kana, youmei, maidenName, genpukuYear, genpukuMonth, roles, affiliations, qualifications, medals,
-      birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now(),
+      abilities, skills, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now(),
     });
     currentPersonId = personId;
   }
@@ -1331,6 +1438,8 @@ const RENDER_FNS = {
   'view-family-tree': renderFamilyTree,
   'view-year-lookup': renderYearLookup,
   'view-person-year': renderPersonYearView,
+  'view-roles': renderRoles,
+  'view-bulk-role': openBulkRoleForm,
 };
 
 function wireNav() {
@@ -1381,6 +1490,35 @@ function wireLists() {
   delegate('person-timeline', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
   delegate('year-lookup-events', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
   delegate('year-lookup-people', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
+  delegate('roles-list', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
+
+  document.getElementById('roles-search-input').addEventListener('input', renderRoles);
+  document.getElementById('bulk-role-person-search').addEventListener('input', renderBulkRolePersonList);
+  document.getElementById('bulk-role-person-list').addEventListener('click', (e) => {
+    const row = e.target.closest('.list-item-check');
+    if (!row) return;
+    const pid = Number(row.dataset.personId);
+    const checkbox = row.querySelector('.bulk-role-check');
+    if (e.target !== checkbox) checkbox.checked = !checkbox.checked;
+    if (checkbox.checked) bulkRoleCheckedIds.add(pid); else bulkRoleCheckedIds.delete(pid);
+  });
+  document.getElementById('bulk-role-save-btn').addEventListener('click', async () => {
+    const role = document.getElementById('bulk-role-name').value.trim();
+    if (!role) { alert('役職名を入力してください'); return; }
+    if (!bulkRoleCheckedIds.size) { alert('対象の人物を選んでください'); return; }
+    const startVal = document.getElementById('bulk-role-start').value;
+    const endVal = document.getElementById('bulk-role-end').value;
+    const startYear = startVal ? clampYear(startVal) : null;
+    const endYear = endVal ? clampYear(endVal) : null;
+    for (const pid of bulkRoleCheckedIds) {
+      const p = personById(pid);
+      if (!p) continue;
+      p.roles = [...(p.roles || []), { role, startYear, endYear }];
+      await DB.updatePerson(p);
+    }
+    await refreshAll();
+    goBack();
+  });
 }
 
 function wireDetailActions() {
@@ -1672,6 +1810,48 @@ function wireForms() {
     if (!btn) return;
     medalDraftRows = medalDraftRows.filter((m) => m.rowId !== btn.dataset.removeMedal);
     renderMedalList();
+  });
+
+  document.getElementById('person-ability-add-btn').addEventListener('click', () => {
+    const nameEl = document.getElementById('person-ability-add-name');
+    const ability = nameEl.value.trim();
+    if (!ability) return;
+    abilityDraftRows.push({ rowId: nextAbilityRowId(), ability });
+    nameEl.value = '';
+    renderAbilityList();
+  });
+  document.getElementById('person-ability-list').addEventListener('input', (e) => {
+    const row = e.target.closest('.summary-row');
+    if (!row) return;
+    const draft = abilityDraftRows.find((a) => a.rowId === row.dataset.rowId);
+    if (draft && e.target.classList.contains('pab-name')) draft.ability = e.target.value;
+  });
+  document.getElementById('person-ability-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-ability]');
+    if (!btn) return;
+    abilityDraftRows = abilityDraftRows.filter((a) => a.rowId !== btn.dataset.removeAbility);
+    renderAbilityList();
+  });
+
+  document.getElementById('person-skill-add-btn').addEventListener('click', () => {
+    const nameEl = document.getElementById('person-skill-add-name');
+    const skill = nameEl.value.trim();
+    if (!skill) return;
+    skillDraftRows.push({ rowId: nextSkillRowId(), skill });
+    nameEl.value = '';
+    renderSkillList();
+  });
+  document.getElementById('person-skill-list').addEventListener('input', (e) => {
+    const row = e.target.closest('.summary-row');
+    if (!row) return;
+    const draft = skillDraftRows.find((s) => s.rowId === row.dataset.rowId);
+    if (draft && e.target.classList.contains('psk-name')) draft.skill = e.target.value;
+  });
+  document.getElementById('person-skill-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-skill]');
+    if (!btn) return;
+    skillDraftRows = skillDraftRows.filter((s) => s.rowId !== btn.dataset.removeSkill);
+    renderSkillList();
   });
 
   document.getElementById('person-spouse-add-btn').addEventListener('click', async () => {

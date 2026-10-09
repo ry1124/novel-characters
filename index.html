@@ -56,6 +56,8 @@
       <div class="detail-sub" id="person-affiliations"></div>
       <div class="detail-sub" id="person-qualifications"></div>
       <div class="detail-sub" id="person-medals"></div>
+      <div class="detail-sub" id="person-abilities"></div>
+      <div class="detail-sub" id="person-skills"></div>
       <div class="detail-sub" id="person-years"></div>
     </div>
     <div id="person-death-banner" class="death-banner hidden"></div>
@@ -251,11 +253,26 @@
         </div>
       </div>
       <button class="btn-secondary" id="person-medal-add-btn" type="button">+ 勲章を追加</button>
+      <div class="section-label" style="padding-left:0;">能力(複数可)</div>
+      <ul id="person-ability-list" class="list" style="padding:0;"></ul>
+      <div class="form-row">
+        <label>能力を追加</label>
+        <input id="person-ability-add-name" type="text" placeholder="能力名(例: 千里眼)">
+      </div>
+      <button class="btn-secondary" id="person-ability-add-btn" type="button">+ 能力を追加</button>
+      <div class="section-label" style="padding-left:0;">技(複数可)</div>
+      <ul id="person-skill-list" class="list" style="padding:0;"></ul>
+      <div class="form-row">
+        <label>技を追加</label>
+        <input id="person-skill-add-name" type="text" placeholder="技名(例: 飛影剣)">
+      </div>
+      <button class="btn-secondary" id="person-skill-add-btn" type="button">+ 技を追加</button>
       <div class="section-label" style="padding-left:0;">家族(任意)</div>
       <div class="form-row"><label>父(名前を直接入力可。未登録の名前なら自動で人物を追加します)</label><input id="person-form-father" type="text" list="person-name-datalist" placeholder="父の名前"></div>
       <div class="form-row"><label>母(名前を直接入力可。未登録の名前なら自動で人物を追加します)</label><input id="person-form-mother" type="text" list="person-name-datalist" placeholder="母の名前"></div>
       <datalist id="person-name-datalist"></datalist>
       <datalist id="affiliation-datalist"></datalist>
+      <datalist id="role-datalist"></datalist>
       <div class="form-note">配偶者(名前を直接入力可。未登録の名前なら自動で人物を追加します)</div>
       <ul id="person-spouse-list" class="list" style="padding:0;"></ul>
       <div class="form-row">
@@ -354,6 +371,39 @@
     </div>
   </section>
 
+  <!-- ===== 役職一覧 ===== -->
+  <section id="view-roles" class="view">
+    <div class="topbar">
+      <h1>役職</h1>
+      <div class="topbar-actions"><button class="icon-btn" data-nav="view-bulk-role">一括追加</button></div>
+    </div>
+    <div class="search-bar"><input id="roles-search-input" type="text" placeholder="役職名で検索"></div>
+    <ul id="roles-list" class="list"></ul>
+    <div id="roles-empty" class="empty-state">まだ役職が登録されていません</div>
+  </section>
+
+  <!-- ===== 役職の一括追加 ===== -->
+  <section id="view-bulk-role" class="view">
+    <div class="topbar">
+      <button class="icon-btn back" data-back>キャンセル</button>
+      <h1 style="font-size:18px;">役職を一括追加</h1>
+      <button class="icon-btn" id="bulk-role-save-btn">保存</button>
+    </div>
+    <div class="form-body">
+      <div class="form-row"><label>役職名</label><input id="bulk-role-name" type="text" list="role-datalist" placeholder="例: 大老"></div>
+      <div class="form-row">
+        <label>期間</label>
+        <div class="event-time-row">
+          <input id="bulk-role-start" type="number" min="0" max="3000" placeholder="開始年">
+          <input id="bulk-role-end" type="number" min="0" max="3000" placeholder="終了年(任意)">
+        </div>
+      </div>
+      <div class="section-label" style="padding-left:0;">対象の人物を選ぶ</div>
+      <div class="search-bar"><input id="bulk-role-person-search" type="text" placeholder="人物名で絞り込み"></div>
+      <ul id="bulk-role-person-list" class="list"></ul>
+    </div>
+  </section>
+
   <!-- ===== 年代検索 ===== -->
   <section id="view-year-lookup" class="view">
     <div class="topbar">
@@ -401,6 +451,7 @@
     <button class="tab-btn active" data-tab="view-search"><span class="tab-icon">🔎</span><span>検索</span></button>
     <button class="tab-btn" data-tab="view-people"><span class="tab-icon">🧑</span><span>人物</span></button>
     <button class="tab-btn" data-tab="view-events"><span class="tab-icon">📜</span><span>出来事</span></button>
+    <button class="tab-btn" data-tab="view-roles"><span class="tab-icon">🎖</span><span>役職</span></button>
     <button class="tab-btn" data-tab="view-year-lookup"><span class="tab-icon">📅</span><span>年代</span></button>
   </nav>
 

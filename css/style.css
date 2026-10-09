@@ -184,6 +184,11 @@ html, body {
 .chip-wrap { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 4px; }
 .chip-wrap .chip-link { margin: 0; padding: 4px 10px; font-size: 12px; }
 
+/* ===== 役職一覧(グループ見出し)・一括追加(チェック式の人物選択) ===== */
+.list-group-header { padding: 14px 2px 4px; font-size: 13px; font-weight: 700; color: var(--text-dim); }
+.list-item.list-item-check { cursor: pointer; }
+.list-item.list-item-check input[type="checkbox"] { width: 20px; height: 20px; flex: none; }
+
 .summary-row input[type="number"] { flex: none; width: 56px; font-size: 13px; padding: 6px 6px; border-radius: 8px; background: var(--surface2); border: 0; color: var(--text); }
 .summary-row select { flex: none; width: 56px; font-size: 13px; padding: 6px 4px; border-radius: 8px; background: var(--surface2); border: 0; color: var(--text); }
 .summary-row input[type="text"] { flex: 1; min-width: 0; font-size: 14px; padding: 6px 8px; border-radius: 8px; background: var(--surface2); border: 0; color: var(--text); }
