@@ -93,7 +93,8 @@ const DB = {
   async getAllEvents() {
     const store = await tx('events', 'readonly');
     const list = await promisifyRequest(store.getAll());
-    return list.sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
+    const key = (e) => (e.year ?? 0) * 100 + (e.month ?? 0);
+    return list.sort((a, b) => key(a) - key(b));
   },
   async getEvent(id) {
     const store = await tx('events', 'readonly');

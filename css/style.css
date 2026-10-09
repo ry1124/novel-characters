@@ -146,10 +146,19 @@ html, body {
 .form-row textarea { resize: vertical; min-height: 64px; }
 .form-note { font-size: 12px; color: var(--text-dim); padding: 6px 0 2px; }
 
+.event-time-row { display: flex; gap: 6px; }
+.event-time-row input[type="number"] { flex: none; width: 70px; }
+.event-time-row select { flex: none; width: 66px; }
+.event-time-row input[type="text"] { flex: 1; min-width: 0; }
+
 .participant-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .participant-row .list-item-main { flex: 1; }
 .participant-row select { width: auto; font-size: 13px; padding: 6px 8px; border-radius: 8px; background: var(--surface2); border: 0; color: var(--text); }
 .remove-btn { background: none; border: none; color: var(--danger); font-size: 20px; padding: 4px 8px; cursor: pointer; }
+
+.settings-btn-row { padding: 10px 0; }
+.settings-action { border: 0; border-radius: 10px; padding: 10px 14px; background: var(--surface2); color: var(--accent); font-size: 15px; font-weight: 600; }
+.settings-action:disabled { opacity: 0.5; }
 
 .btn-primary, .btn-secondary, .btn-danger {
   display: block; width: 100%; text-align: center; padding: 13px; border-radius: 12px;

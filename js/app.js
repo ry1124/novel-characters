@@ -26,6 +26,9 @@ function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+function eventTimeKey(ev) { return (ev.year ?? 0) * 100 + (ev.month ?? 0); }
+function formatEventTime(ev) { return `${ev.year}年` + (ev.month ? `${ev.month}月` : ''); }
+
 function peopleMapCache() { return new Map(people.map((p) => [p.id, p])); }
 function personById(id) { return people.find((p) => p.id === id); }
 function eraById(id) { return eras.find((e) => e.id === id); }
@@ -39,7 +42,7 @@ async function refreshAll() {
 function getDeathInfo(personId) {
   const hits = events.filter((ev) => (ev.participants || []).some((p) => p.personId === personId && p.status === '死亡'));
   if (!hits.length) return null;
-  return hits.slice().sort((a, b) => (b.year ?? 0) - (a.year ?? 0))[0];
+  return hits.slice().sort((a, b) => eventTimeKey(b) - eventTimeKey(a))[0];
 }
 
 // ===== 画面遷移 =====
@@ -110,15 +113,17 @@ function openEventForm(id) {
   editingEventId = id;
   const titleEl = document.getElementById('event-form-title');
   const yearEl = document.getElementById('event-form-year');
+  const monthEl = document.getElementById('event-form-month');
   const descEl = document.getElementById('event-form-description');
   if (id) {
     const ev = eventById(id);
     titleEl.value = ev.title || '';
     yearEl.value = ev.year ?? '';
+    monthEl.value = ev.month ?? '';
     descEl.value = ev.description || '';
     draftParticipants = (ev.participants || []).map((p) => ({ ...p }));
   } else {
-    titleEl.value = ''; yearEl.value = ''; descEl.value = '';
+    titleEl.value = ''; yearEl.value = ''; monthEl.value = ''; descEl.value = '';
     draftParticipants = [];
   }
   renderEventFormParticipants();
@@ -175,7 +180,7 @@ function renderPersonDetail() {
   const banner = document.getElementById('person-death-banner');
   if (death) {
     banner.classList.remove('hidden');
-    banner.innerHTML = `死亡済: <b>${escapeHtml(death.title)}</b>(${death.year}年)で死亡 → 出来事を見る`;
+    banner.innerHTML = `死亡済: <b>${escapeHtml(death.title)}</b>(${formatEventTime(death)})で死亡 → 出来事を見る`;
     banner.onclick = () => openEventDetail(death.id);
   } else {
     banner.classList.add('hidden');
@@ -183,7 +188,7 @@ function renderPersonDetail() {
   }
 
   const myEvents = events.filter((ev) => (ev.participants || []).some((pt) => pt.personId === p.id))
-    .slice().sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
+    .slice().sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
   const timelineEl = document.getElementById('person-timeline');
   const timelineEmptyEl = document.getElementById('person-timeline-empty');
   if (!myEvents.length) { timelineEl.innerHTML = ''; timelineEmptyEl.classList.remove('hidden'); }
@@ -193,7 +198,7 @@ function renderPersonDetail() {
       const part = (ev.participants || []).find((pt) => pt.personId === p.id) || {};
       const isDead = part.status === '死亡';
       return `<li class="timeline-item ${isDead ? 'is-dead' : ''}" data-event-id="${ev.id}">
-        <div class="timeline-year">${ev.year}年</div>
+        <div class="timeline-year">${formatEventTime(ev)}</div>
         <div class="timeline-body">
           <div class="timeline-title">${escapeHtml(ev.title)} <span class="status-pill ${STATUS_CLASS[part.status] || 'unknown'}">${part.status || '不明'}</span></div>
           <div class="timeline-desc">${escapeHtml(part.note || ev.description || '')}</div>
@@ -209,11 +214,11 @@ function renderEvents() {
   const emptyEl = document.getElementById('events-empty');
   if (!events.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); return; }
   emptyEl.classList.add('hidden');
-  const sorted = events.slice().sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
+  const sorted = events.slice().sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
   listEl.innerHTML = sorted.map((ev) => `<li class="list-item" data-event-id="${ev.id}">
     <div class="list-item-main">
       <div class="list-item-title">${escapeHtml(ev.title)}</div>
-      <div class="list-item-sub">${ev.year}年 ・ 参加者${(ev.participants || []).length}人</div>
+      <div class="list-item-sub">${formatEventTime(ev)} ・ 参加者${(ev.participants || []).length}人</div>
     </div>
     <span class="list-item-chevron">›</span>
   </li>`).join('');
@@ -224,7 +229,7 @@ function renderEventDetail() {
   const ev = eventById(currentEventId);
   if (!ev) { goBack(); return; }
   document.getElementById('event-title').textContent = ev.title;
-  document.getElementById('event-year').textContent = `${ev.year}年`;
+  document.getElementById('event-year').textContent = formatEventTime(ev);
   document.getElementById('event-description').textContent = ev.description || '';
 
   const pm = peopleMapCache();
@@ -286,10 +291,10 @@ function renderEraDetail() {
 
   const eraPersonIds = new Set(erapeople.map((p) => p.id));
   const eraEvents = events.filter((ev) => (ev.participants || []).some((p) => eraPersonIds.has(p.personId)))
-    .slice().sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
+    .slice().sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
   const el = document.getElementById('era-events');
   el.innerHTML = eraEvents.length ? eraEvents.map((ev) => `<li class="timeline-item" data-event-id="${ev.id}">
-      <div class="timeline-year">${ev.year}年</div>
+      <div class="timeline-year">${formatEventTime(ev)}</div>
       <div class="timeline-body"><div class="timeline-title">${escapeHtml(ev.title)}</div></div>
     </li>`).join('') : '<div class="empty-state">この時代の出来事はまだありません</div>';
 }
@@ -506,16 +511,18 @@ async function deleteEra(id) {
 
 async function saveEventForm() {
   const title = document.getElementById('event-form-title').value.trim();
-  if (!title) { alert('出来事名を入力してください'); return; }
-  const year = Number(document.getElementById('event-form-year').value) || 0;
+  if (!title) { alert('出来事を入力してください'); return; }
+  const year = clampYear(document.getElementById('event-form-year').value);
+  const monthVal = document.getElementById('event-form-month').value;
+  const month = monthVal ? Number(monthVal) : null;
   const description = document.getElementById('event-form-description').value.trim();
   if (editingEventId) {
     const ev = eventById(editingEventId);
-    ev.title = title; ev.year = year; ev.description = description; ev.participants = draftParticipants;
+    ev.title = title; ev.year = year; ev.month = month; ev.description = description; ev.participants = draftParticipants;
     await DB.updateEvent(ev);
     currentEventId = ev.id;
   } else {
-    const id = await DB.addEvent({ title, year, description, terrainMap: null, participants: draftParticipants });
+    const id = await DB.addEvent({ title, year, month, description, terrainMap: null, participants: draftParticipants });
     currentEventId = id;
   }
   await refreshAll();
@@ -657,6 +664,71 @@ function wireBackup() {
   });
 }
 
+// ===== バージョン確認・更新 =====
+async function fetchLatestVersion() {
+  const res = await fetch(`js/version.js?t=${Date.now()}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('取得できませんでした');
+  const text = await res.text();
+  const m = text.match(/APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
+  if (!m) throw new Error('バージョンを読み取れませんでした');
+  return m[1];
+}
+
+// service-worker.js自体は中身(バイト列)が変わらないリリースもあるため、
+// ブラウザの自動更新チェックだけでは新しさに気づけない場合がある。
+// そのため、新しいバージョンがあると分かったら unregister→再登録して、確実に新しい内容を取りに行かせる
+async function applyServiceWorkerUpdate() {
+  if (!('serviceWorker' in navigator)) return;
+  const reg = await navigator.serviceWorker.getRegistration();
+  if (reg) await reg.unregister().catch(() => {});
+  await navigator.serviceWorker.register('service-worker.js').catch(() => {});
+}
+
+async function checkForUpdate() {
+  const statusEl = document.getElementById('update-status');
+  const btn = document.getElementById('btn-check-update');
+  btn.disabled = true;
+  statusEl.textContent = '確認中...';
+  try {
+    const latest = await fetchLatestVersion();
+    if (latest === APP_VERSION) {
+      statusEl.textContent = `最新版です(バージョン ${APP_VERSION})`;
+    } else {
+      autoUpdateNoticeShown = true;
+      await applyServiceWorkerUpdate();
+      statusEl.textContent = `新しいバージョン(${latest})に更新しました。まもなく画面が更新されます。`;
+      setTimeout(() => location.reload(), 600); // メッセージが一瞬見えるよう、少し待ってから更新する
+    }
+  } catch (err) {
+    console.error('バージョン確認に失敗:', err);
+    statusEl.textContent = '確認できませんでした。ネット接続を確認してください。';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+let autoUpdateNoticeShown = false;
+let autoUpdateCheckInFlight = false;
+// アプリを開いた・前面に戻ったときに、裏で静かにバージョンを確認する(ユーザーが設定画面を開く必要がないようにするため)
+async function autoCheckUpdateSilently() {
+  if (autoUpdateCheckInFlight || autoUpdateNoticeShown) return;
+  autoUpdateCheckInFlight = true;
+  try {
+    const latest = await fetchLatestVersion();
+    if (latest !== APP_VERSION) {
+      autoUpdateNoticeShown = true;
+      await applyServiceWorkerUpdate();
+      location.reload();
+    }
+  } catch (err) { /* オフラインなどはここでは何もしない(設定画面のボタンでエラーを伝える) */ }
+  finally { autoUpdateCheckInFlight = false; }
+}
+
+function wireUpdateCheck() {
+  document.getElementById('btn-check-update').addEventListener('click', checkForUpdate);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') autoCheckUpdateSilently(); });
+}
+
 async function init() {
   await refreshAll();
   wireNav();
@@ -664,6 +736,7 @@ async function init() {
   wireDetailActions();
   wireForms();
   wireBackup();
+  wireUpdateCheck();
   initMapEditorEvents();
   document.getElementById('app-version').textContent = APP_VERSION;
   document.getElementById('app-version-home').textContent = 'v' + APP_VERSION;
@@ -671,6 +744,7 @@ async function init() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('service-worker.js').catch(() => {});
   }
+  setTimeout(autoCheckUpdateSilently, 4000); // 起動が落ち着いてから、裏で新しいバージョンがないか確認する
 }
 
 document.addEventListener('DOMContentLoaded', init);
