@@ -86,12 +86,8 @@ html, body {
 .icon-btn.back { font-size: 17px; padding-left: 0; }
 
 .filter-chips {
-  display: flex; gap: 8px; overflow-x: auto; padding: 4px 16px 8px; -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 16px 8px;
 }
-.filter-chips::-webkit-scrollbar { height: 5px; }
-.filter-chips::-webkit-scrollbar-track { background: transparent; }
-.filter-chips::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 .filter-chip {
   flex-shrink: 0; padding: 6px 14px; border-radius: 16px; background: var(--surface2); color: var(--text-dim);
   font-size: 13px; line-height: 1.4; white-space: nowrap; border: none; cursor: pointer;
@@ -264,6 +260,9 @@ html, body {
 .tree-wrap {
   overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y;
   scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  /* ページ自体もスクロール領域のため、入れ子のスクロール領域になる。iOSでは中身が描画されない
+     (タッチ/スクロールするまで見えない)ことがあるため、GPU合成を強制して回避する */
+  transform: translateZ(0);
 }
 .tree-wrap::-webkit-scrollbar { height: 5px; }
 .tree-wrap::-webkit-scrollbar-track { background: transparent; }
