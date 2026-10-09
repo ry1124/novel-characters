@@ -30,6 +30,10 @@
       <h1>人物</h1>
       <div class="topbar-actions"><button class="icon-btn" data-nav="view-edit-person" data-new="person">+ 追加</button></div>
     </div>
+    <div class="filter-chips">
+      <button class="filter-chip active" data-sort="name">名前順</button>
+      <button class="filter-chip" data-sort="birth">生年順</button>
+    </div>
     <ul id="people-list" class="list"></ul>
     <div id="people-empty" class="empty-state">まだ人物が登録されていません</div>
   </section>
@@ -62,6 +66,7 @@
       <h1>出来事</h1>
       <div class="topbar-actions"><button class="icon-btn" data-nav="view-edit-event" data-new="event">+ 追加</button></div>
     </div>
+    <div class="search-bar"><input id="events-search-input" type="text" placeholder="出来事名・説明で検索"></div>
     <ul id="events-list" class="list"></ul>
     <div id="events-empty" class="empty-state">まだ出来事が登録されていません</div>
   </section>

@@ -57,6 +57,11 @@ function getDeathInfo(personId) {
   return hits.slice().sort((a, b) => eventTimeKey(b) - eventTimeKey(a))[0];
 }
 
+// 「死亡済」かどうかは、死亡扱いの出来事があるか、没年が手入力されているかのどちらかで判定する
+function isPersonDead(p) {
+  return getDeathInfo(p.id) !== null || p.deathYear != null;
+}
+
 // ===== 画面遷移 =====
 function applyView(viewId) {
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === viewId));
@@ -209,7 +214,7 @@ function renderSearch() {
 }
 
 function personListItemHtml(p) {
-  const dead = getDeathInfo(p.id);
+  const dead = isPersonDead(p);
   const years = formatPersonYears(p);
   const roleNames = (p.roles || []).map((r) => r.role).filter(Boolean).join('・');
   const subParts = [roleNames, years || '生没年未設定'].filter(Boolean);
@@ -224,12 +229,17 @@ function personListItemHtml(p) {
 }
 
 // ===== 人物一覧 =====
+let peopleSortMode = 'name'; // 'name' | 'birth'
 function renderPeople() {
   const listEl = document.getElementById('people-list');
   const emptyEl = document.getElementById('people-empty');
   if (!people.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); return; }
   emptyEl.classList.add('hidden');
-  const sorted = people.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
+  const sorted = people.slice().sort((a, b) => (
+    peopleSortMode === 'birth'
+      ? (a.birthYear ?? Infinity) - (b.birthYear ?? Infinity)
+      : (a.name || '').localeCompare(b.name || '', 'ja')
+  ));
   listEl.innerHTML = sorted.map((p) => personListItemHtml(p)).join('');
 }
 
@@ -249,6 +259,10 @@ function renderPersonDetail() {
     banner.classList.remove('hidden');
     banner.innerHTML = `死亡済: <b>${escapeHtml(death.title)}</b>(${formatEventTime(death)})で死亡 → 出来事を見る`;
     banner.onclick = () => openEventDetail(death.id);
+  } else if (p.deathYear != null) {
+    banner.classList.remove('hidden');
+    banner.innerHTML = `死亡済(没年 ${p.deathYear}年)`;
+    banner.onclick = null;
   } else {
     banner.classList.add('hidden');
     banner.onclick = null;
@@ -280,9 +294,14 @@ function renderPersonDetail() {
 function renderEvents() {
   const listEl = document.getElementById('events-list');
   const emptyEl = document.getElementById('events-empty');
-  if (!events.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); return; }
+  if (!events.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); emptyEl.textContent = 'まだ出来事が登録されていません'; return; }
+  const q = (document.getElementById('events-search-input').value || '').trim().toLowerCase();
+  const filtered = q
+    ? events.filter((ev) => (ev.title || '').toLowerCase().includes(q) || (ev.description || '').toLowerCase().includes(q))
+    : events;
+  if (!filtered.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); emptyEl.textContent = '該当する出来事が見つかりません'; return; }
   emptyEl.classList.add('hidden');
-  const sorted = events.slice().sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
+  const sorted = filtered.slice().sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
   listEl.innerHTML = sorted.map((ev) => `<li class="list-item" data-event-id="${ev.id}">
     <div class="list-item-main">
       <div class="list-item-title">${escapeHtml(ev.title)}</div>
@@ -304,10 +323,12 @@ function renderEventDetail() {
   const listEl = document.getElementById('event-participants');
   listEl.innerHTML = (ev.participants || []).map((p) => {
     const person = pm.get(p.personId);
+    const age = person ? personAgeAt(person, ev.year) : null;
+    const subParts = [age !== null ? `${age}歳` : '', p.note || ''].filter(Boolean);
     return `<li class="list-item" data-person-id="${p.personId}">
       <div class="list-item-main">
         <div class="list-item-title">${escapeHtml(person ? person.name : '(不明な人物)')}</div>
-        <div class="list-item-sub">${escapeHtml(p.note || '')}</div>
+        <div class="list-item-sub">${escapeHtml(subParts.join(' ・ '))}</div>
       </div>
       <span class="status-pill ${STATUS_CLASS[p.status] || 'unknown'}">${p.status || '不明'}</span>
       <span class="list-item-chevron">›</span>
@@ -608,6 +629,15 @@ function wireNav() {
 
 function wireLists() {
   document.getElementById('search-input').addEventListener('input', renderSearch);
+  document.getElementById('events-search-input').addEventListener('input', renderEvents);
+
+  document.querySelectorAll('#view-people .filter-chips').forEach((bar) => bar.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-sort]');
+    if (!chip) return;
+    peopleSortMode = chip.dataset.sort;
+    bar.querySelectorAll('.filter-chip').forEach((c) => c.classList.toggle('active', c === chip));
+    renderPeople();
+  }));
 
   const delegate = (id, selector, fn) => document.getElementById(id).addEventListener('click', (e) => {
     const el = e.target.closest(selector);
