@@ -119,6 +119,7 @@
     </div>
     <div class="detail-header">
       <h2 id="era-name"></h2>
+      <div class="detail-sub" id="era-years"></div>
       <div class="detail-sub" id="era-note"></div>
     </div>
     <div class="section-label">この時代の人物</div>
@@ -135,7 +136,8 @@
     </div>
     <div class="form-body">
       <div class="form-row"><label>時代名</label><input id="era-form-name" type="text" placeholder="例: 建国時代"></div>
-      <div class="form-row"><label>並び順(小さい数字ほど上に表示)</label><input id="era-form-order" type="number" value="0"></div>
+      <div class="form-row"><label>開始年(0〜3000)</label><input id="era-form-start" type="number" min="0" max="3000" value="0"></div>
+      <div class="form-row"><label>終了年(0〜3000)</label><input id="era-form-end" type="number" min="0" max="3000" value="0"></div>
       <div class="form-row"><label>補足(任意)</label><textarea id="era-form-note" placeholder="時代の説明など"></textarea></div>
     </div>
   </section>

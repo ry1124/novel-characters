@@ -11,7 +11,7 @@ function openDB() {
       const db = req.result;
       if (!db.objectStoreNames.contains('eras')) {
         const store = db.createObjectStore('eras', { keyPath: 'id', autoIncrement: true });
-        store.createIndex('order', 'order', { unique: false });
+        store.createIndex('startYear', 'startYear', { unique: false });
       }
       if (!db.objectStoreNames.contains('people')) {
         const store = db.createObjectStore('people', { keyPath: 'id', autoIncrement: true });
@@ -48,7 +48,7 @@ const DB = {
   async getAllEras() {
     const store = await tx('eras', 'readonly');
     const list = await promisifyRequest(store.getAll());
-    return list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    return list.sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   },
   async getEra(id) {
     const store = await tx('eras', 'readonly');

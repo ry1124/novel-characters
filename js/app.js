@@ -91,15 +91,17 @@ function openPersonForm(id) {
 function openEraForm(id) {
   editingEraId = id;
   const nameEl = document.getElementById('era-form-name');
-  const orderEl = document.getElementById('era-form-order');
+  const startEl = document.getElementById('era-form-start');
+  const endEl = document.getElementById('era-form-end');
   const noteEl = document.getElementById('era-form-note');
   if (id) {
     const e = eraById(id);
     nameEl.value = e.name || '';
-    orderEl.value = e.order ?? 0;
+    startEl.value = e.startYear ?? 0;
+    endEl.value = e.endYear ?? 0;
     noteEl.value = e.note || '';
   } else {
-    nameEl.value = ''; orderEl.value = eras.length; noteEl.value = '';
+    nameEl.value = ''; startEl.value = 0; endEl.value = 0; noteEl.value = '';
   }
   navigateTo('view-edit-era');
 }
@@ -262,7 +264,7 @@ function renderEras() {
     return `<li class="list-item" data-era-id="${e.id}">
       <div class="list-item-main">
         <div class="list-item-title">${escapeHtml(e.name)}</div>
-        <div class="list-item-sub">人物${count}人</div>
+        <div class="list-item-sub">${e.startYear}年〜${e.endYear}年 ・ 人物${count}人</div>
       </div>
       <span class="list-item-chevron">›</span>
     </li>`;
@@ -274,6 +276,7 @@ function renderEraDetail() {
   const era = eraById(currentEraId);
   if (!era) { goBack(); return; }
   document.getElementById('era-name').textContent = era.name;
+  document.getElementById('era-years').textContent = `${era.startYear}年〜${era.endYear}年`;
   document.getElementById('era-note').textContent = era.note || '';
 
   const erapeople = people.filter((p) => p.eraId === era.id);
@@ -469,17 +472,21 @@ async function deletePerson(id) {
   goBack();
 }
 
+function clampYear(v) { return Math.min(3000, Math.max(0, Number(v) || 0)); }
+
 async function saveEraForm() {
   const name = document.getElementById('era-form-name').value.trim();
   if (!name) { alert('時代名を入力してください'); return; }
-  const order = Number(document.getElementById('era-form-order').value) || 0;
+  const startYear = clampYear(document.getElementById('era-form-start').value);
+  const endYear = clampYear(document.getElementById('era-form-end').value);
+  if (startYear > endYear) { alert('開始年は終了年より前にしてください'); return; }
   const note = document.getElementById('era-form-note').value.trim();
   if (editingEraId) {
     const e = eraById(editingEraId);
-    e.name = name; e.order = order; e.note = note;
+    e.name = name; e.startYear = startYear; e.endYear = endYear; e.note = note;
     await DB.updateEra(e);
   } else {
-    const id = await DB.addEra({ name, order, note });
+    const id = await DB.addEra({ name, startYear, endYear, note });
     currentEraId = id;
   }
   await refreshAll();
