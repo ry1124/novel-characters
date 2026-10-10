@@ -98,6 +98,7 @@ function applyView(viewId) {
   if (el) el.scrollTop = 0;
   const renderFn = RENDER_FNS[viewId];
   if (renderFn) renderFn();
+  refreshIndexTarget(viewId); // renderFnが無い画面(詳細画面など)に移った時にも、右端インデックスバーを隠す
 }
 
 // 編集フォームに未保存の変更がある状態でそこから離れようとした時だけ確認する
@@ -586,12 +587,12 @@ function renderSearch() {
   listEl.innerHTML = hits.map((p) => personListItemHtml(p)).join('');
 }
 
-function personListItemHtml(p) {
+function personListItemHtml(p, section = null) {
   const dead = isPersonDead(p);
   const years = formatPersonYears(p);
   const roleNames = (p.roles || []).map((r) => r.role).filter(Boolean).join('・');
   const subParts = [roleNames, years || '生没年未設定'].filter(Boolean);
-  return `<li class="list-item" data-person-id="${p.id}">
+  return `<li class="list-item" data-person-id="${p.id}"${section != null ? ` data-section="${escapeHtml(section)}"` : ''}>
     <div class="list-item-main">
       <div class="list-item-title">${escapeHtml(p.name)}</div>
       <div class="list-item-sub">${escapeHtml(subParts.join(' ・ '))}${dead ? ' ・ 死亡済' : ''}</div>
@@ -601,19 +602,140 @@ function personListItemHtml(p) {
   </li>`;
 }
 
+// ===== 右端のインデックスバー(人物一覧・名前順の時だけ。音楽アプリのあ〜わ/A〜Z/#ジャンプバーと同じ仕組み) =====
+const INDEX_LABELS = [...'あかさたなはまやらわ', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '#'];
+const KANA_ROWS = {
+  'あ': 'ぁあぃいぅうぇえぉおゔ', 'か': 'かきくけこゕゖ', 'さ': 'さしすせそ', 'た': 'たちつってとっ', 'な': 'なにぬねの',
+  'は': 'はひふへほ', 'ま': 'まみむめも', 'や': 'ゃやゅゆょよ', 'ら': 'らりるれろ', 'わ': 'ゎわゐゑをん',
+};
+const SECTION_INDEX = new Map(INDEX_LABELS.map((l, i) => [l, i]));
+
+// 先頭文字の所属: ひらがな/カタカナ→行の代表(濁音・半濁音・小書きも同じ行)、英字→A〜Z、それ以外(漢字・記号)→#
+function sectionOf(str) {
+  const c = (str || '').normalize('NFKC').trim().charAt(0);
+  if (!c) return '#';
+  const h = c.replace(/[ァ-ヶ]/, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+  if (/[A-Za-z]/.test(h)) return h.toUpperCase();
+  const base = h.normalize('NFD').charAt(0); // 濁点・半濁点を分離して清音にする
+  for (const [row, chars] of Object.entries(KANA_ROWS)) if (chars.includes(base)) return row;
+  return '#';
+}
+
+let indexBarListId = null;
+
+// 右端のインデックスバーを出すか・どの一覧を対象にするかを、今の画面から決める(対応しているのは人物一覧の名前順の時だけ)
+function refreshIndexTarget(viewId) {
+  const show = viewId === 'view-people' && peopleSortMode === 'name' && people.length > 0;
+  indexBarListId = show ? 'people-list' : null;
+  document.getElementById('index-bar').classList.toggle('hidden', !show);
+  document.getElementById('view-people').classList.toggle('has-index', show);
+}
+
+function jumpToSection(label) {
+  if (!indexBarListId) return;
+  const target = SECTION_INDEX.get(label);
+  const listEl = document.getElementById(indexBarListId);
+  const view = document.querySelector('.view.active');
+  if (!listEl || !view) return;
+  const topbar = view.querySelector('.topbar');
+  const chips = view.querySelector('.filter-chips');
+  const offset = (topbar ? topbar.offsetHeight : 0) + (chips ? chips.offsetHeight : 0);
+  const hit = [...listEl.querySelectorAll('[data-section]')].find((el) => SECTION_INDEX.get(el.dataset.section) >= target);
+  if (hit) view.scrollTop += hit.getBoundingClientRect().top - view.getBoundingClientRect().top - offset;
+}
+
+// 触覚フィードバック(文字が切り替わるたびの「コツッ」)。iOS 17.4以降の <input type=checkbox switch> を
+// プログラムから切り替えたときの触覚を利用する。非対応の端末では何も起きない
+let hapticLabel = null;
+function hapticTick() {
+  try {
+    if (!hapticLabel) {
+      hapticLabel = document.createElement('label');
+      hapticLabel.setAttribute('aria-hidden', 'true');
+      hapticLabel.style.display = 'none';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.setAttribute('switch', '');
+      hapticLabel.appendChild(input);
+      document.head.appendChild(hapticLabel);
+    }
+    hapticLabel.click();
+    if (navigator.vibrate) navigator.vibrate(8); // Android等
+  } catch (e) { /* 触覚が使えなくても動作に影響しない */ }
+}
+
+// iOS標準の一覧インデックスと同様: 指が文字の上を移動するたびに触覚+ジャンプする
+function setupIndexBar() {
+  const bar = document.getElementById('index-bar');
+  const spans = INDEX_LABELS.map((l) => {
+    const span = document.createElement('span');
+    span.textContent = l;
+    bar.appendChild(span);
+    return span;
+  });
+  let lastLabel = null;
+
+  const labelAt = (clientY) => {
+    const r = bar.getBoundingClientRect();
+    const i = Math.min(INDEX_LABELS.length - 1, Math.max(0, Math.floor(((clientY - r.top) / r.height) * INDEX_LABELS.length)));
+    return { label: INDEX_LABELS[i], i };
+  };
+  const touchAt = (clientY) => {
+    const { label, i } = labelAt(clientY);
+    bar.classList.add('touching');
+    spans.forEach((sp, k) => sp.classList.toggle('current', k === i));
+    if (label !== lastLabel) {
+      lastLabel = label;
+      hapticTick();
+      jumpToSection(label);
+    }
+  };
+  const release = () => {
+    lastLabel = null;
+    bar.classList.remove('touching');
+    spans.forEach((sp) => sp.classList.remove('current'));
+  };
+
+  const onTouch = (e) => { e.preventDefault(); touchAt(e.touches[0].clientY); };
+  bar.addEventListener('touchstart', onTouch, { passive: false });
+  bar.addEventListener('touchmove', onTouch, { passive: false });
+  bar.addEventListener('touchend', release);
+  bar.addEventListener('touchcancel', release);
+  // PCブラウザ用
+  bar.addEventListener('mousedown', (e) => {
+    touchAt(e.clientY);
+    const move = (ev) => touchAt(ev.clientY);
+    const up = () => { release(); window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  });
+}
+
 // ===== 人物一覧 =====
 let peopleSortMode = 'name'; // 'name' | 'birth'
 function renderPeople() {
   const listEl = document.getElementById('people-list');
   const emptyEl = document.getElementById('people-empty');
-  if (!people.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); return; }
+  if (!people.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); refreshIndexTarget('view-people'); return; }
   emptyEl.classList.add('hidden');
   const sorted = people.slice().sort((a, b) => (
     peopleSortMode === 'birth'
       ? (a.birthYear ?? Infinity) - (b.birthYear ?? Infinity)
-      : (a.name || '').localeCompare(b.name || '', 'ja')
+      : (a.kana || a.name || '').localeCompare(b.kana || b.name || '', 'ja')
   ));
-  listEl.innerHTML = sorted.map((p) => personListItemHtml(p)).join('');
+  if (peopleSortMode === 'name') {
+    // 名前順の時だけ、あ・か・さ…の見出し行を挟む(右端のインデックスバーのジャンプ先になる)
+    let lastSection = null;
+    listEl.innerHTML = sorted.map((p) => {
+      const section = sectionOf(p.kana || p.name);
+      const header = section !== lastSection ? `<li class="section-header-row">${escapeHtml(section)}</li>` : '';
+      lastSection = section;
+      return header + personListItemHtml(p, section);
+    }).join('');
+  } else {
+    listEl.innerHTML = sorted.map((p) => personListItemHtml(p)).join('');
+  }
+  refreshIndexTarget('view-people');
 }
 
 // ===== 人物詳細 =====
@@ -2022,7 +2144,7 @@ function wireLists() {
     if (!chip) return;
     peopleSortMode = chip.dataset.sort;
     bar.querySelectorAll('.filter-chip').forEach((c) => c.classList.toggle('active', c === chip));
-    renderPeople();
+    renderPeople(); // 内部でrefreshIndexTargetも呼ぶため、生年順の時はインデックスバーが自動で隠れる
   }));
 
   document.querySelectorAll('#view-events .filter-chips').forEach((bar) => bar.addEventListener('click', (e) => {
@@ -2730,6 +2852,7 @@ async function init() {
   wireBackup();
   wireUpdateCheck();
   initMapEditorEvents();
+  setupIndexBar();
   document.getElementById('app-version').textContent = APP_VERSION;
   document.getElementById('app-version-home').textContent = 'v' + APP_VERSION;
   applyView('view-search');
