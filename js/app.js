@@ -213,6 +213,7 @@ function renderMedalList() {
   listEl.innerHTML = medalDraftRows.map((row) => `<li class="participant-row summary-row" data-row-id="${row.rowId}">
       <input class="pmd-start" type="number" min="0" max="3000" value="${row.startYear ?? ''}" placeholder="授与年">
       <input class="pmd-name" type="text" value="${escapeHtml(row.medal || '')}" placeholder="勲章名">
+      <input class="pmd-rank" type="text" value="${escapeHtml(row.rank || '')}" placeholder="階級(例: 勲一等)">
       <button type="button" class="remove-btn" data-remove-medal="${row.rowId}">×</button>
     </li>`).join('');
 }
@@ -435,7 +436,7 @@ function openPersonForm(id) {
     roleDraftRows = (p.roles || []).map((r) => ({ rowId: nextRoleRowId(), role: r.role, startYear: r.startYear, endYear: r.endYear }));
     affiliationDraftRows = (p.affiliations || []).map((a) => ({ rowId: nextAffiliationRowId(), affiliation: a.affiliation, startYear: a.startYear, endYear: a.endYear }));
     qualificationDraftRows = (p.qualifications || []).map((q) => ({ rowId: nextQualificationRowId(), qualification: q.qualification, startYear: q.startYear, endYear: q.endYear }));
-    medalDraftRows = (p.medals || []).map((m) => ({ rowId: nextMedalRowId(), medal: m.medal, startYear: m.startYear }));
+    medalDraftRows = (p.medals || []).map((m) => ({ rowId: nextMedalRowId(), medal: m.medal, rank: m.rank, startYear: m.startYear }));
     abilityDraftRows = (p.abilities || []).map((a) => ({ rowId: nextAbilityRowId(), ability: a.ability }));
     weaponDraftRows = (p.weapons || []).map((w) => ({ rowId: nextWeaponRowId(), weapon: w.weapon }));
     skillDraftRows = (p.skills || []).map((s) => ({ rowId: nextSkillRowId(), skill: s.skill, description: s.description }));
@@ -476,6 +477,7 @@ function openPersonForm(id) {
   document.getElementById('person-qualification-add-name').value = '';
   document.getElementById('person-medal-add-start').value = '';
   document.getElementById('person-medal-add-name').value = '';
+  document.getElementById('person-medal-add-rank').value = '';
   document.getElementById('person-skill-add-name').value = '';
   document.getElementById('person-skill-add-description').value = '';
   renderSummaryList();
@@ -594,7 +596,10 @@ function renderPersonDetail() {
   }).join('');
   document.getElementById('person-affiliations').textContent = (p.affiliations || []).map((a) => `${a.affiliation}(${formatRolePeriod(a)})`).join('、');
   document.getElementById('person-qualifications').textContent = (p.qualifications || []).map((q) => `${q.qualification}(${formatRolePeriod(q)})`).join('、');
-  document.getElementById('person-medals').textContent = (p.medals || []).map((m) => `${m.medal}${m.startYear != null ? `(${m.startYear}年)` : ''}`).join('、');
+  document.getElementById('person-medals').textContent = (p.medals || []).map((m) => {
+    const parts = [m.rank, m.startYear != null ? `${m.startYear}年` : null].filter(Boolean);
+    return parts.length ? `${m.medal}(${parts.join('・')})` : m.medal;
+  }).join('、');
   document.getElementById('person-abilities').textContent = (p.abilities || []).length ? `能力: ${(p.abilities || []).map((a) => a.ability).join('、')}` : '';
   document.getElementById('person-weapons').textContent = (p.weapons || []).length ? `武器: ${(p.weapons || []).map((w) => w.weapon).join('、')}` : '';
   document.getElementById('person-skills').textContent = (p.skills || []).length
@@ -1161,6 +1166,7 @@ async function savePersonForm() {
     .filter((m) => (m.medal || '').trim())
     .map((m) => ({
       medal: m.medal.trim(),
+      rank: (m.rank || '').trim(),
       startYear: m.startYear != null && m.startYear !== '' ? clampYear(m.startYear) : null,
     }));
   const abilities = abilityDraftRows
@@ -1827,7 +1833,8 @@ function renderPersonYearResult(p, yearVal) {
   const activeRoles = activePeriodItems(p.roles, 'role', year);
   const activeAffiliations = activePeriodItems(p.affiliations, 'affiliation', year);
   const activeQualifications = activePeriodItems(p.qualifications, 'qualification', year);
-  const earnedMedals = (p.medals || []).filter((m) => m.startYear != null && m.startYear <= year).map((m) => m.medal);
+  const earnedMedals = (p.medals || []).filter((m) => m.startYear != null && m.startYear <= year)
+    .map((m) => m.rank ? `${m.medal}(${m.rank})` : m.medal);
   const yearEvents = events.filter((ev) => (ev.participants || []).some((pt) => pt.personId === p.id) && yearWithinEvent(ev, year))
     .sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
   const subParts = [
@@ -2357,10 +2364,11 @@ function wireForms() {
   document.getElementById('person-medal-add-btn').addEventListener('click', () => {
     const startEl = document.getElementById('person-medal-add-start');
     const nameEl = document.getElementById('person-medal-add-name');
+    const rankEl = document.getElementById('person-medal-add-rank');
     const medal = nameEl.value.trim();
     if (!medal) return;
-    medalDraftRows.push({ rowId: nextMedalRowId(), medal, startYear: startEl.value ? clampYear(startEl.value) : null });
-    startEl.value = ''; nameEl.value = '';
+    medalDraftRows.push({ rowId: nextMedalRowId(), medal, rank: rankEl.value.trim(), startYear: startEl.value ? clampYear(startEl.value) : null });
+    startEl.value = ''; nameEl.value = ''; rankEl.value = '';
     renderMedalList();
   });
 
@@ -2372,6 +2380,7 @@ function wireForms() {
     if (!draft) return;
     if (e.target.classList.contains('pmd-start')) draft.startYear = e.target.value ? clampYear(e.target.value) : null;
     else if (e.target.classList.contains('pmd-name')) draft.medal = e.target.value;
+    else if (e.target.classList.contains('pmd-rank')) draft.rank = e.target.value;
   });
   medalList.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-remove-medal]');
