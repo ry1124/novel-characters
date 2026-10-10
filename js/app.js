@@ -1140,9 +1140,11 @@ function smoothPathD(points) {
   return d;
 }
 
-// 同じ要領で、ひと続きの輪になった滑らかな閉じた形にする(山の塗りつぶし輪郭に使う)
+// 同じ要領で、ひと続きの輪になった滑らかな閉じた形にする(山の塗りつぶし輪郭に使う)。
+// 山は線ではなく面として塗りつぶしで表すため、点が少ない間も(開いた線にせず)必ず閉じた形を返す
 function smoothClosedPathD(points) {
-  if (points.length < 3) return smoothPathD(points);
+  if (points.length < 2) return '';
+  if (points.length === 2) return `M${points[0].x},${points[0].y} L${points[1].x},${points[1].y} Z`;
   const n = points.length;
   const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
   const start = mid(points[n - 1], points[0]);
