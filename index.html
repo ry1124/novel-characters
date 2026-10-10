@@ -204,7 +204,6 @@
       <div class="form-row"><label>没年(0〜3000、存命・不明なら空欄)</label><input id="person-form-death" type="number" min="0" max="3000" placeholder="例: 540"></div>
       <div class="form-row"><label>幼名(任意)</label><input id="person-form-youmei" type="text" placeholder="例: 竹千代"></div>
       <div class="form-row"><label>旧姓(任意)</label><input id="person-form-maiden-name" type="text" placeholder="例: 鈴木"></div>
-      <div class="form-row"><label>陣営(任意)</label><input id="person-form-faction" type="text" placeholder="例: 東軍" list="person-faction-datalist"></div>
       <datalist id="person-faction-datalist"></datalist>
       <div class="form-row">
         <label>元服(任意)</label>
@@ -266,6 +265,17 @@
         </div>
       </div>
       <button class="btn-secondary" id="person-medal-add-btn" type="button">+ 勲章を追加</button>
+      <div class="section-label" style="padding-left:0;">陣営(複数可、寝返り等で変わる場合は年代順に登録)</div>
+      <div class="form-note">詳細画面では「東軍(1590年) → 西軍(1600年)」のように矢印で推移を表示します</div>
+      <ul id="person-faction-list" class="list" style="padding:0;"></ul>
+      <div class="form-row">
+        <label>陣営を追加</label>
+        <div class="event-time-row">
+          <input id="person-faction-add-start" type="number" min="0" max="3000" placeholder="所属年">
+          <input id="person-faction-add-name" type="text" list="person-faction-datalist" placeholder="陣営名(例: 東軍)">
+        </div>
+      </div>
+      <button class="btn-secondary" id="person-faction-add-btn" type="button">+ 陣営を追加</button>
       <div class="section-label" style="padding-left:0;">能力(複数可)</div>
       <ul id="person-ability-list" class="list" style="padding:0;"></ul>
       <div class="form-row">

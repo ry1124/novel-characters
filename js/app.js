@@ -55,6 +55,18 @@ function formatPersonYears(p) {
   return `${p.birthYear ?? '?'}年〜${p.deathYear ?? ''}${p.deathYear ? '年' : ''}`;
 }
 
+// 陣営の推移を「東軍(1590年) → 西軍(1600年)」のように矢印で繋げて表示する(所属年の昇順)
+function formatFactionHistory(p) {
+  const list = (p.factions || []).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+  return list.map((f) => (f.startYear != null ? `${f.faction}(${f.startYear}年)` : f.faction)).join(' → ');
+}
+
+// 現時点(最後に所属した)陣営だけを返す。出来事の参加者に追加する時の初期値に使う
+function currentFactionOf(p) {
+  const list = (p.factions || []).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+  return list.length ? list[list.length - 1].faction : '';
+}
+
 // 生年が分かっている人物だけ、指定した年の時点での年齢(満年齢、月は考慮しない簡易計算)を返す
 function personAgeAt(p, year) {
   if (p.birthYear == null || year == null) return null;
@@ -203,6 +215,20 @@ function renderQualificationList() {
     </li>`).join('');
 }
 
+// ===== 人物フォーム: 陣営(複数、年代順。寝返り等で陣営が変わる場合に対応) =====
+let factionDraftRows = [];
+let factionRowSeq = 0;
+function nextFactionRowId() { return 'faction' + (factionRowSeq++); }
+
+function renderFactionList() {
+  const listEl = document.getElementById('person-faction-list');
+  listEl.innerHTML = factionDraftRows.map((row) => `<li class="participant-row summary-row" data-row-id="${row.rowId}">
+      <input class="pfc-start" type="number" min="0" max="3000" value="${row.startYear ?? ''}" placeholder="所属年">
+      <input class="pfc-name" type="text" value="${escapeHtml(row.faction || '')}" placeholder="陣営名" list="person-faction-datalist">
+      <button type="button" class="remove-btn" data-remove-faction="${row.rowId}">×</button>
+    </li>`).join('');
+}
+
 // ===== 人物フォーム: 勲章(複数、授与年のみ)編集 =====
 let medalDraftRows = [];
 let medalRowSeq = 0;
@@ -300,9 +326,9 @@ function renderPersonNameDatalist() {
   people.forEach((p) => (p.roles || []).forEach((r) => { if (r.role) roleNames.add(r.role); }));
   document.getElementById('role-datalist').innerHTML =
     Array.from(roleNames).map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
-  // 陣営は人物自身のfactionと、出来事の参加者に付けたfactionの両方から候補を集める(表記ゆれ防止)
+  // 陣営は人物自身のfactionsと、出来事の参加者に付けたfactionの両方から候補を集める(表記ゆれ防止)
   const factionNames = new Set();
-  people.forEach((p) => { if (p.faction) factionNames.add(p.faction); });
+  people.forEach((p) => (p.factions || []).forEach((f) => { if (f.faction) factionNames.add(f.faction); }));
   events.forEach((ev) => (ev.participants || []).forEach((pt) => { if (pt.faction) factionNames.add(pt.faction); }));
   document.getElementById('person-faction-datalist').innerHTML =
     Array.from(factionNames).map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
@@ -420,7 +446,6 @@ function openPersonForm(id) {
   const kanaEl = document.getElementById('person-form-kana');
   const youmeiEl = document.getElementById('person-form-youmei');
   const maidenNameEl = document.getElementById('person-form-maiden-name');
-  const factionEl = document.getElementById('person-form-faction');
   const genpukuYearEl = document.getElementById('person-form-genpuku-year');
   const genpukuMonthEl = document.getElementById('person-form-genpuku-month');
   const birthEl = document.getElementById('person-form-birth');
@@ -434,7 +459,9 @@ function openPersonForm(id) {
     kanaEl.value = p.kana || '';
     youmeiEl.value = p.youmei || '';
     maidenNameEl.value = p.maidenName || '';
-    factionEl.value = p.faction || '';
+    // 旧データ(単一のp.faction)しかない場合はそれを1件目として引き継ぐ
+    factionDraftRows = (p.factions || (p.faction ? [{ faction: p.faction, startYear: null }] : []))
+      .map((f) => ({ rowId: nextFactionRowId(), faction: f.faction, startYear: f.startYear }));
     genpukuYearEl.value = p.genpukuYear ?? '';
     genpukuMonthEl.value = p.genpukuMonth ?? '';
     episodeEl.value = p.episode || '';
@@ -453,13 +480,14 @@ function openPersonForm(id) {
     initialMotherId = p.motherId != null ? String(p.motherId) : '';
     spouseDraftIds = (p.spouseIds || []).slice();
   } else {
-    nameEl.value = ''; kanaEl.value = ''; youmeiEl.value = ''; maidenNameEl.value = ''; factionEl.value = '';
+    nameEl.value = ''; kanaEl.value = ''; youmeiEl.value = ''; maidenNameEl.value = '';
     genpukuYearEl.value = ''; genpukuMonthEl.value = ''; birthEl.value = ''; deathEl.value = ''; episodeEl.value = '';
     summaryDraftRows = [];
     roleDraftRows = [];
     affiliationDraftRows = [];
     qualificationDraftRows = [];
     medalDraftRows = [];
+    factionDraftRows = [];
     abilityDraftRows = [];
     weaponDraftRows = [];
     skillDraftRows = [];
@@ -486,6 +514,8 @@ function openPersonForm(id) {
   document.getElementById('person-medal-add-start').value = '';
   document.getElementById('person-medal-add-name').value = '';
   document.getElementById('person-medal-add-rank').value = '';
+  document.getElementById('person-faction-add-start').value = '';
+  document.getElementById('person-faction-add-name').value = '';
   document.getElementById('person-skill-add-name').value = '';
   document.getElementById('person-skill-add-description').value = '';
   renderSummaryList();
@@ -493,6 +523,7 @@ function openPersonForm(id) {
   renderAffiliationList();
   renderQualificationList();
   renderMedalList();
+  renderFactionList();
   renderAbilityList();
   renderWeaponList();
   renderSkillList();
@@ -545,7 +576,7 @@ function renderSearch() {
   if (!q) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); emptyEl.textContent = '名前を入力すると、人物の経歴を検索できます'; return; }
   const hits = people.filter((p) => (p.name || '').toLowerCase().includes(q) || (p.kana || '').toLowerCase().includes(q)
     || (p.youmei || '').toLowerCase().includes(q) || (p.maidenName || '').toLowerCase().includes(q)
-    || (p.faction || '').toLowerCase().includes(q)
+    || (p.factions || []).some((f) => (f.faction || '').toLowerCase().includes(q))
     || (p.roles || []).some((r) => (r.role || '').toLowerCase().includes(q))
     || (p.affiliations || []).some((a) => (a.affiliation || '').toLowerCase().includes(q))
     || (p.abilities || []).some((a) => (a.ability || '').toLowerCase().includes(q))
@@ -593,7 +624,7 @@ function renderPersonDetail() {
   document.getElementById('person-kana').textContent = p.kana || '';
   document.getElementById('person-youmei').textContent = p.youmei ? `幼名: ${p.youmei}` : '';
   document.getElementById('person-maiden-name').textContent = p.maidenName ? `旧姓: ${p.maidenName}` : '';
-  document.getElementById('person-faction').textContent = p.faction ? `陣営: ${p.faction}` : '';
+  document.getElementById('person-faction').textContent = (p.factions || []).length ? `陣営: ${formatFactionHistory(p)}` : '';
   document.getElementById('person-genpuku').textContent = p.genpukuYear != null ? `元服: ${formatYearMonth(p.genpukuYear, p.genpukuMonth)}` : '';
   const rolesSorted = (p.roles || []).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   document.getElementById('person-roles-timeline').innerHTML = rolesSorted.map((r) => `<li class="timeline-item">
@@ -872,7 +903,7 @@ function renderEventFormParticipants() {
   // 他の出来事や人物自身に設定済みの陣営名を候補に出す(表記ゆれ防止)
   const factionNames = new Set();
   events.forEach((ev) => (ev.participants || []).forEach((p) => { if (p.faction) factionNames.add(p.faction); }));
-  people.forEach((person) => { if (person.faction) factionNames.add(person.faction); });
+  people.forEach((person) => (person.factions || []).forEach((f) => { if (f.faction) factionNames.add(f.faction); }));
   document.getElementById('event-faction-datalist').innerHTML =
     Array.from(factionNames).map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
   const listEl = document.getElementById('event-form-participants');
@@ -1166,7 +1197,6 @@ async function savePersonForm() {
   const youmei = document.getElementById('person-form-youmei').value.trim();
   const maidenName = document.getElementById('person-form-maiden-name').value.trim();
   const episode = document.getElementById('person-form-episode').value.trim();
-  const faction = document.getElementById('person-form-faction').value.trim();
   const genpukuYearVal = document.getElementById('person-form-genpuku-year').value;
   const genpukuMonthVal = document.getElementById('person-form-genpuku-month').value;
   const genpukuYear = genpukuYearVal ? clampYear(genpukuYearVal) : null;
@@ -1205,6 +1235,14 @@ async function savePersonForm() {
       rank: (m.rank || '').trim(),
       startYear: m.startYear != null && m.startYear !== '' ? clampYear(m.startYear) : null,
     }));
+  // 陣営が変わっても矢印(→)で推移を表せるよう、所属年の昇順に並べ替えてから保存する
+  const factions = factionDraftRows
+    .filter((f) => (f.faction || '').trim())
+    .map((f) => ({
+      faction: f.faction.trim(),
+      startYear: f.startYear != null && f.startYear !== '' ? clampYear(f.startYear) : null,
+    }))
+    .sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   const abilities = abilityDraftRows
     .filter((a) => (a.ability || '').trim())
     .map((a) => ({ ability: a.ability.trim() }));
@@ -1227,15 +1265,15 @@ async function savePersonForm() {
   if (editingPersonId) {
     const p = personById(editingPersonId);
     oldSpouseIds = p.spouseIds || [];
-    p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.faction = faction; p.episode = episode; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
-    p.roles = roles; p.affiliations = affiliations; p.qualifications = qualifications; p.medals = medals;
+    p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.episode = episode; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
+    p.roles = roles; p.affiliations = affiliations; p.qualifications = qualifications; p.medals = medals; p.factions = factions;
     p.abilities = abilities; p.weapons = weapons; p.skills = skills; p.relationships = relationships;
     p.birthYear = birthYear; p.deathYear = deathYear;
     p.fatherId = fatherId; p.motherId = motherId; p.spouseIds = spouseIds;
     await DB.updatePerson(p);
   } else {
     personId = await DB.addPerson({
-      name, kana, youmei, maidenName, faction, episode, genpukuYear, genpukuMonth, roles, affiliations, qualifications, medals,
+      name, kana, youmei, maidenName, episode, genpukuYear, genpukuMonth, roles, affiliations, qualifications, medals, factions,
       abilities, weapons, skills, relationships, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now(),
     });
     currentPersonId = personId;
@@ -2179,7 +2217,7 @@ function wireForms() {
     const personId = await resolvePersonFromSelect(sel, '参加者');
     if (personId == null || draftParticipants.some((p) => p.personId === personId)) return;
     const addedPerson = personById(personId);
-    draftParticipants.push({ personId, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [], faction: (addedPerson && addedPerson.faction) || '' });
+    draftParticipants.push({ personId, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [], faction: addedPerson ? currentFactionOf(addedPerson) : '' });
     renderEventFormParticipants();
     renderAddPersonSelect();
   });
@@ -2425,6 +2463,31 @@ function wireForms() {
     if (!btn) return;
     medalDraftRows = medalDraftRows.filter((m) => m.rowId !== btn.dataset.removeMedal);
     renderMedalList();
+  });
+
+  document.getElementById('person-faction-add-btn').addEventListener('click', () => {
+    const startEl = document.getElementById('person-faction-add-start');
+    const nameEl = document.getElementById('person-faction-add-name');
+    const faction = nameEl.value.trim();
+    if (!faction) return;
+    factionDraftRows.push({ rowId: nextFactionRowId(), faction, startYear: startEl.value ? clampYear(startEl.value) : null });
+    startEl.value = ''; nameEl.value = '';
+    renderFactionList();
+  });
+  const factionList = document.getElementById('person-faction-list');
+  factionList.addEventListener('input', (e) => {
+    const row = e.target.closest('.summary-row');
+    if (!row) return;
+    const draft = factionDraftRows.find((f) => f.rowId === row.dataset.rowId);
+    if (!draft) return;
+    if (e.target.classList.contains('pfc-start')) draft.startYear = e.target.value ? clampYear(e.target.value) : null;
+    else if (e.target.classList.contains('pfc-name')) draft.faction = e.target.value;
+  });
+  factionList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-faction]');
+    if (!btn) return;
+    factionDraftRows = factionDraftRows.filter((f) => f.rowId !== btn.dataset.removeFaction);
+    renderFactionList();
   });
 
   document.getElementById('person-ability-add-btn').addEventListener('click', () => {
