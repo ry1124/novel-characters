@@ -580,7 +580,7 @@ function renderPeople() {
 function renderPersonDetail() {
   const p = personById(currentPersonId);
   if (!p) { goBack(); return; }
-  document.getElementById('person-name').textContent = p.name + (p.birthYear != null ? `(${p.birthYear}年〜)` : '');
+  document.getElementById('person-name').textContent = p.name;
   document.getElementById('person-kana').textContent = p.kana || '';
   document.getElementById('person-youmei').textContent = p.youmei ? `幼名: ${p.youmei}` : '';
   document.getElementById('person-maiden-name').textContent = p.maidenName ? `旧姓: ${p.maidenName}` : '';
