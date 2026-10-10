@@ -300,6 +300,12 @@ function renderPersonNameDatalist() {
   people.forEach((p) => (p.roles || []).forEach((r) => { if (r.role) roleNames.add(r.role); }));
   document.getElementById('role-datalist').innerHTML =
     Array.from(roleNames).map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
+  // 陣営は人物自身のfactionと、出来事の参加者に付けたfactionの両方から候補を集める(表記ゆれ防止)
+  const factionNames = new Set();
+  people.forEach((p) => { if (p.faction) factionNames.add(p.faction); });
+  events.forEach((ev) => (ev.participants || []).forEach((pt) => { if (pt.faction) factionNames.add(pt.faction); }));
+  document.getElementById('person-faction-datalist').innerHTML =
+    Array.from(factionNames).map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
   populatePersonFormSelects();
 }
 
@@ -414,6 +420,7 @@ function openPersonForm(id) {
   const kanaEl = document.getElementById('person-form-kana');
   const youmeiEl = document.getElementById('person-form-youmei');
   const maidenNameEl = document.getElementById('person-form-maiden-name');
+  const factionEl = document.getElementById('person-form-faction');
   const genpukuYearEl = document.getElementById('person-form-genpuku-year');
   const genpukuMonthEl = document.getElementById('person-form-genpuku-month');
   const birthEl = document.getElementById('person-form-birth');
@@ -427,6 +434,7 @@ function openPersonForm(id) {
     kanaEl.value = p.kana || '';
     youmeiEl.value = p.youmei || '';
     maidenNameEl.value = p.maidenName || '';
+    factionEl.value = p.faction || '';
     genpukuYearEl.value = p.genpukuYear ?? '';
     genpukuMonthEl.value = p.genpukuMonth ?? '';
     episodeEl.value = p.episode || '';
@@ -445,7 +453,7 @@ function openPersonForm(id) {
     initialMotherId = p.motherId != null ? String(p.motherId) : '';
     spouseDraftIds = (p.spouseIds || []).slice();
   } else {
-    nameEl.value = ''; kanaEl.value = ''; youmeiEl.value = ''; maidenNameEl.value = '';
+    nameEl.value = ''; kanaEl.value = ''; youmeiEl.value = ''; maidenNameEl.value = ''; factionEl.value = '';
     genpukuYearEl.value = ''; genpukuMonthEl.value = ''; birthEl.value = ''; deathEl.value = ''; episodeEl.value = '';
     summaryDraftRows = [];
     roleDraftRows = [];
@@ -537,6 +545,7 @@ function renderSearch() {
   if (!q) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); emptyEl.textContent = '名前を入力すると、人物の経歴を検索できます'; return; }
   const hits = people.filter((p) => (p.name || '').toLowerCase().includes(q) || (p.kana || '').toLowerCase().includes(q)
     || (p.youmei || '').toLowerCase().includes(q) || (p.maidenName || '').toLowerCase().includes(q)
+    || (p.faction || '').toLowerCase().includes(q)
     || (p.roles || []).some((r) => (r.role || '').toLowerCase().includes(q))
     || (p.affiliations || []).some((a) => (a.affiliation || '').toLowerCase().includes(q))
     || (p.abilities || []).some((a) => (a.ability || '').toLowerCase().includes(q))
@@ -584,6 +593,7 @@ function renderPersonDetail() {
   document.getElementById('person-kana').textContent = p.kana || '';
   document.getElementById('person-youmei').textContent = p.youmei ? `幼名: ${p.youmei}` : '';
   document.getElementById('person-maiden-name').textContent = p.maidenName ? `旧姓: ${p.maidenName}` : '';
+  document.getElementById('person-faction').textContent = p.faction ? `陣営: ${p.faction}` : '';
   document.getElementById('person-genpuku').textContent = p.genpukuYear != null ? `元服: ${formatYearMonth(p.genpukuYear, p.genpukuMonth)}` : '';
   const rolesSorted = (p.roles || []).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   document.getElementById('person-roles-timeline').innerHTML = rolesSorted.map((r) => `<li class="timeline-item">
@@ -859,9 +869,10 @@ function renderBulkAffiliationPersonList() {
 // ===== 出来事フォーム: 参加者編集 =====
 function renderEventFormParticipants() {
   const pm = peopleMapCache();
-  // 他の出来事で既に使われている陣営名を候補に出す(表記ゆれ防止)
+  // 他の出来事や人物自身に設定済みの陣営名を候補に出す(表記ゆれ防止)
   const factionNames = new Set();
   events.forEach((ev) => (ev.participants || []).forEach((p) => { if (p.faction) factionNames.add(p.faction); }));
+  people.forEach((person) => { if (person.faction) factionNames.add(person.faction); });
   document.getElementById('event-faction-datalist').innerHTML =
     Array.from(factionNames).map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
   const listEl = document.getElementById('event-form-participants');
@@ -1155,6 +1166,7 @@ async function savePersonForm() {
   const youmei = document.getElementById('person-form-youmei').value.trim();
   const maidenName = document.getElementById('person-form-maiden-name').value.trim();
   const episode = document.getElementById('person-form-episode').value.trim();
+  const faction = document.getElementById('person-form-faction').value.trim();
   const genpukuYearVal = document.getElementById('person-form-genpuku-year').value;
   const genpukuMonthVal = document.getElementById('person-form-genpuku-month').value;
   const genpukuYear = genpukuYearVal ? clampYear(genpukuYearVal) : null;
@@ -1215,7 +1227,7 @@ async function savePersonForm() {
   if (editingPersonId) {
     const p = personById(editingPersonId);
     oldSpouseIds = p.spouseIds || [];
-    p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.episode = episode; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
+    p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.faction = faction; p.episode = episode; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
     p.roles = roles; p.affiliations = affiliations; p.qualifications = qualifications; p.medals = medals;
     p.abilities = abilities; p.weapons = weapons; p.skills = skills; p.relationships = relationships;
     p.birthYear = birthYear; p.deathYear = deathYear;
@@ -1223,7 +1235,7 @@ async function savePersonForm() {
     await DB.updatePerson(p);
   } else {
     personId = await DB.addPerson({
-      name, kana, youmei, maidenName, episode, genpukuYear, genpukuMonth, roles, affiliations, qualifications, medals,
+      name, kana, youmei, maidenName, faction, episode, genpukuYear, genpukuMonth, roles, affiliations, qualifications, medals,
       abilities, weapons, skills, relationships, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now(),
     });
     currentPersonId = personId;
@@ -2166,7 +2178,8 @@ function wireForms() {
     const sel = document.getElementById('event-form-add-person');
     const personId = await resolvePersonFromSelect(sel, '参加者');
     if (personId == null || draftParticipants.some((p) => p.personId === personId)) return;
-    draftParticipants.push({ personId, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [], faction: '' });
+    const addedPerson = personById(personId);
+    draftParticipants.push({ personId, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [], faction: (addedPerson && addedPerson.faction) || '' });
     renderEventFormParticipants();
     renderAddPersonSelect();
   });
