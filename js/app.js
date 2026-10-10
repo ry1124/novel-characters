@@ -718,11 +718,15 @@ function renderPeople() {
   const emptyEl = document.getElementById('people-empty');
   if (!people.length) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); refreshIndexTarget('view-people'); return; }
   emptyEl.classList.add('hidden');
-  const sorted = people.slice().sort((a, b) => (
-    peopleSortMode === 'birth'
-      ? (a.birthYear ?? Infinity) - (b.birthYear ?? Infinity)
-      : (a.kana || a.name || '').localeCompare(b.kana || b.name || '', 'ja')
-  ));
+  const kanaCompare = (a, b) => (a.kana || a.name || '').localeCompare(b.kana || b.name || '', 'ja');
+  const sorted = people.slice().sort((a, b) => {
+    if (peopleSortMode === 'birth') return (a.birthYear ?? Infinity) - (b.birthYear ?? Infinity);
+    if (peopleSortMode === 'status') {
+      const diff = (isPersonDead(a) ? 1 : 0) - (isPersonDead(b) ? 1 : 0);
+      return diff !== 0 ? diff : kanaCompare(a, b);
+    }
+    return kanaCompare(a, b);
+  });
   if (peopleSortMode === 'name') {
     // 名前順の時だけ、あ・か・さ…の見出し行を挟む(右端のインデックスバーのジャンプ先になる)
     let lastSection = null;
@@ -731,6 +735,15 @@ function renderPeople() {
       const header = section !== lastSection ? `<li class="section-header-row">${escapeHtml(section)}</li>` : '';
       lastSection = section;
       return header + personListItemHtml(p, section);
+    }).join('');
+  } else if (peopleSortMode === 'status') {
+    // 生死順の時は「存命」「死亡済」の見出しで2グループに分ける
+    let lastGroup = null;
+    listEl.innerHTML = sorted.map((p) => {
+      const group = isPersonDead(p) ? '死亡済' : '存命';
+      const header = group !== lastGroup ? `<li class="section-header-row">${escapeHtml(group)}</li>` : '';
+      lastGroup = group;
+      return header + personListItemHtml(p);
     }).join('');
   } else {
     listEl.innerHTML = sorted.map((p) => personListItemHtml(p)).join('');
@@ -1084,8 +1097,18 @@ function svgEl(tag, attrs) {
   return el;
 }
 
-function hillPoints(cx, cy) {
-  return [[cx - 20, cy + 12], [cx - 9, cy - 14], [cx + 9, cy - 14], [cx + 20, cy + 12]];
+// 山は標高(elevation 1〜3)が高いほど大きく・色が濃くなる(等高線図のように大きさで高さを表現する)
+const HILL_ELEVATIONS = [1, 2, 3];
+const HILL_COLORS = { 1: '#aebb8f', 2: '#8a9a6b', 3: '#64744a' };
+function hillPoints(cx, cy, elevation) {
+  const scale = 0.7 + (elevation || 2) * 0.3; // 1→1.0倍, 2→1.3倍, 3→1.6倍
+  return [[cx - 20 * scale, cy + 12 * scale], [cx - 9 * scale, cy - 14 * scale], [cx + 9 * scale, cy - 14 * scale], [cx + 20 * scale, cy + 12 * scale]];
+}
+
+// 川は2点(x1,y1)-(x2,y2)の線分として持つ。横向き固定だった旧データ({x,y}のみ)は中心点から横一直線として読み込む
+function riverEndpoints(shape) {
+  if (shape.x1 != null) return { x1: shape.x1, y1: shape.y1, x2: shape.x2, y2: shape.y2 };
+  return { x1: shape.x - 30, y1: shape.y, x2: shape.x + 30, y2: shape.y };
 }
 
 function renderMapSvg(svg, shapes, participants, pm, interactive) {
@@ -1093,10 +1116,23 @@ function renderMapSvg(svg, shapes, participants, pm, interactive) {
   svg.appendChild(svgEl('rect', { x: 0, y: 0, width: 400, height: 300, fill: '#dfe8d8' }));
   shapes.forEach((shape, idx) => {
     if (shape.type === 'hill') {
-      const pts = hillPoints(shape.x, shape.y).map((p) => p.join(',')).join(' ');
-      svg.appendChild(svgEl('polygon', { points: pts, fill: '#8a9a6b', stroke: '#5f6f45', 'stroke-width': 1.5, 'data-kind': 'shape', 'data-shape-idx': idx }));
+      const elevation = shape.elevation || 2;
+      const pts = hillPoints(shape.x, shape.y, elevation).map((p) => p.join(',')).join(' ');
+      svg.appendChild(svgEl('polygon', { points: pts, fill: HILL_COLORS[elevation] || HILL_COLORS[2], stroke: '#5f6f45', 'stroke-width': 1.5, 'data-kind': 'shape', 'data-shape-idx': idx }));
     } else if (shape.type === 'river') {
-      svg.appendChild(svgEl('line', { x1: shape.x - 30, y1: shape.y, x2: shape.x + 30, y2: shape.y, stroke: '#5b8bd0', 'stroke-width': 6, 'stroke-linecap': 'round', 'data-kind': 'shape', 'data-shape-idx': idx }));
+      const { x1, y1, x2, y2 } = riverEndpoints(shape);
+      svg.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: '#5b8bd0', 'stroke-width': 6, 'stroke-linecap': 'round', 'data-kind': 'shape', 'data-shape-idx': idx }));
+      if (interactive) { // 編集中だけ、両端に専用のつまみを置いて向き・長さを変えられるようにする
+        svg.appendChild(svgEl('circle', { cx: x1, cy: y1, r: 7, fill: '#2f5fad', stroke: '#fff', 'stroke-width': 1.5, 'data-kind': 'river-handle', 'data-shape-idx': idx, 'data-handle': '1' }));
+        svg.appendChild(svgEl('circle', { cx: x2, cy: y2, r: 7, fill: '#2f5fad', stroke: '#fff', 'stroke-width': 1.5, 'data-kind': 'river-handle', 'data-shape-idx': idx, 'data-handle': '2' }));
+      }
+    } else if (shape.type === 'castle') {
+      const g = svgEl('g', { 'data-kind': 'shape', 'data-shape-idx': idx });
+      g.appendChild(svgEl('rect', { x: shape.x - 13, y: shape.y - 13, width: 26, height: 26, rx: 3, fill: '#a9896a', stroke: '#5f4a32', 'stroke-width': 1.5 }));
+      const label = svgEl('text', { x: shape.x, y: shape.y + 24, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: '#1c1530' });
+      label.textContent = shape.name || '城';
+      g.appendChild(label);
+      svg.appendChild(g);
     }
   });
   participants.forEach((p, idx) => {
@@ -1107,7 +1143,7 @@ function renderMapSvg(svg, shapes, participants, pm, interactive) {
     const g = svgEl('g', { 'data-kind': 'marker', 'data-participant-idx': idx });
     g.appendChild(svgEl('circle', { cx: p.position.x, cy: p.position.y, r: 14, fill: color, stroke: '#fff', 'stroke-width': 2 }));
     const text = svgEl('text', { x: p.position.x, y: p.position.y + 26, 'text-anchor': 'middle', 'font-size': 11, fill: '#1c1530' });
-    text.textContent = name.slice(0, 4);
+    text.textContent = name.slice(0, 6);
     g.appendChild(text);
     svg.appendChild(g);
   });
@@ -1129,19 +1165,43 @@ function redrawMapEditor() {
 
 function renderMapToolbar() {
   const bar = document.getElementById('map-toolbar');
-  const tools = [{ id: 'hill', label: '⛰ 山を置く' }, { id: 'river', label: '🌊 川を置く' }, { id: 'delete', label: '🗑 地形を削除' }];
+  const tools = [
+    { id: 'hill', label: '⛰ 山を置く' },
+    { id: 'river', label: '🌊 川を置く' },
+    { id: 'castle', label: '🏯 城を置く' },
+    { id: 'edit', label: '✏️ 高さ・名前を変更' },
+    { id: 'delete', label: '🗑 地形を削除' },
+  ];
   bar.innerHTML = tools.map((t) => `<button type="button" class="map-tool-btn ${selectedMapTool === t.id ? 'active' : ''}" data-tool="${t.id}">${t.label}</button>`).join('');
 }
 
 function openMapEditor() {
   const ev = eventById(mapEditingEventId);
-  mapDraftShapes = JSON.parse(JSON.stringify((ev.terrainMap && ev.terrainMap.shapes) || []));
+  mapDraftShapes = JSON.parse(JSON.stringify((ev.terrainMap && ev.terrainMap.shapes) || []))
+    // 旧データの川({x,y}のみ)は、この画面を開いた時点で2点形式に変換する(向きを変えられるようにするため)
+    .map((s) => (s.type === 'river' && s.x1 == null) ? { type: 'river', ...riverEndpoints(s) } : s);
   mapDraftParticipants = JSON.parse(JSON.stringify(ev.participants || [])).map((p, i) => (
     p.position ? p : { ...p, position: { x: 30 + (i % 6) * 58, y: 230 + Math.floor(i / 6) * 40 } }
   ));
   selectedMapTool = null;
   renderMapToolbar();
   redrawMapEditor();
+}
+
+async function editMapShape(idx) {
+  const shape = mapDraftShapes[idx];
+  if (!shape) return;
+  if (shape.type === 'hill') {
+    // タップするたびに標高(大きさ・色の濃さ)を1→2→3→1と切り替える
+    const i = HILL_ELEVATIONS.indexOf(shape.elevation || 2);
+    shape.elevation = HILL_ELEVATIONS[(i + 1) % HILL_ELEVATIONS.length];
+    redrawMapEditor();
+  } else if (shape.type === 'castle') {
+    const name = await promptText('城の名前', shape.name || '城');
+    if (name == null) return;
+    shape.name = name.trim() || '城';
+    redrawMapEditor();
+  }
 }
 
 function initMapEditorEvents() {
@@ -1158,23 +1218,54 @@ function initMapEditorEvents() {
       if (g && g.dataset.kind === 'shape') { mapDraftShapes.splice(Number(g.dataset.shapeIdx), 1); redrawMapEditor(); }
       return;
     }
-    if (g) {
-      mapDragging = g.dataset.kind === 'shape'
-        ? { kind: 'shape', idx: Number(g.dataset.shapeIdx) }
-        : { kind: 'marker', idx: Number(g.dataset.participantIdx) };
+    if (g && selectedMapTool === 'edit') {
+      if (g.dataset.kind === 'shape') editMapShape(Number(g.dataset.shapeIdx));
       return;
     }
-    if (selectedMapTool === 'hill' || selectedMapTool === 'river') {
+    if (g) {
+      if (g.dataset.kind === 'shape') {
+        // 川は2点とも一緒に動かせるよう、始点からの移動量(dx, dy)を記録しておく
+        mapDragging = { kind: 'shape', idx: Number(g.dataset.shapeIdx), startPt: svgPoint(svg, e), orig: { ...mapDraftShapes[Number(g.dataset.shapeIdx)] } };
+      } else if (g.dataset.kind === 'river-handle') {
+        mapDragging = { kind: 'river-handle', idx: Number(g.dataset.shapeIdx), handle: g.dataset.handle };
+      } else {
+        mapDragging = { kind: 'marker', idx: Number(g.dataset.participantIdx) };
+      }
+      return;
+    }
+    if (selectedMapTool === 'hill') {
       const pt = svgPoint(svg, e);
-      mapDraftShapes.push({ type: selectedMapTool, x: pt.x, y: pt.y });
+      mapDraftShapes.push({ type: 'hill', x: pt.x, y: pt.y, elevation: 2 });
       redrawMapEditor();
+    } else if (selectedMapTool === 'river') {
+      const pt = svgPoint(svg, e);
+      mapDraftShapes.push({ type: 'river', x1: pt.x - 30, y1: pt.y, x2: pt.x + 30, y2: pt.y });
+      redrawMapEditor();
+    } else if (selectedMapTool === 'castle') {
+      const pt = svgPoint(svg, e);
+      promptText('城の名前', '城').then((name) => {
+        if (name == null) return;
+        mapDraftShapes.push({ type: 'castle', x: pt.x, y: pt.y, name: name.trim() || '城' });
+        redrawMapEditor();
+      });
     }
   });
   svg.addEventListener('pointermove', (e) => {
     if (!mapDragging) return;
     const pt = svgPoint(svg, e);
-    if (mapDragging.kind === 'shape') { mapDraftShapes[mapDragging.idx].x = pt.x; mapDraftShapes[mapDragging.idx].y = pt.y; }
-    else { mapDraftParticipants[mapDragging.idx].position = { x: pt.x, y: pt.y }; }
+    if (mapDragging.kind === 'shape') {
+      const shape = mapDraftShapes[mapDragging.idx];
+      const orig = mapDragging.orig;
+      const dx = pt.x - mapDragging.startPt.x;
+      const dy = pt.y - mapDragging.startPt.y;
+      if (orig.type === 'river') { shape.x1 = orig.x1 + dx; shape.y1 = orig.y1 + dy; shape.x2 = orig.x2 + dx; shape.y2 = orig.y2 + dy; }
+      else { shape.x = orig.x + dx; shape.y = orig.y + dy; }
+    } else if (mapDragging.kind === 'river-handle') {
+      const shape = mapDraftShapes[mapDragging.idx];
+      if (mapDragging.handle === '1') { shape.x1 = pt.x; shape.y1 = pt.y; } else { shape.x2 = pt.x; shape.y2 = pt.y; }
+    } else {
+      mapDraftParticipants[mapDragging.idx].position = { x: pt.x, y: pt.y };
+    }
     redrawMapEditor();
   });
   window.addEventListener('pointerup', () => { mapDragging = null; });
