@@ -903,12 +903,11 @@ function renderEventDetail() {
   const svg = document.getElementById('event-map-preview');
   const shapes = (ev.terrainMap && ev.terrainMap.shapes) || [];
   const placed = (ev.participants || []).filter((p) => p.position);
-  if (shapes.length || placed.length) {
-    wrap.style.display = '';
-    renderMapSvg(svg, shapes, placed, pm, false);
-  } else {
-    wrap.style.display = 'none';
-  }
+  const showMap = shapes.length || placed.length;
+  document.getElementById('event-map-label').style.display = showMap ? '' : 'none';
+  wrap.style.display = showMap ? '' : 'none';
+  if (showMap) renderMapSvg(svg, shapes, placed, pm, false);
+  renderMapLegend('event-map-legend', placed);
 
   const children = events.filter((c) => c.parentEventId === ev.id).sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
   document.getElementById('event-children-list').innerHTML = children.map((c) => `<li class="list-item" data-event-id="${c.id}">
@@ -1111,6 +1110,36 @@ function riverEndpoints(shape) {
   return { x1: shape.x - 30, y1: shape.y, x2: shape.x + 30, y2: shape.y };
 }
 
+// 城は地図記号(城跡記号)のように、凹凸のある城壁(クレネレーション)のシルエットで表す
+function castlePoints(cx, cy) {
+  const w = 26, h = 24;
+  const left = cx - w / 2, right = cx + w / 2;
+  const bottom = cy + h / 2, topGap = cy - h / 2 + 7, topTooth = cy - h / 2;
+  const t = w / 5; // 歯3つ+隙間2つで5分割
+  return [
+    [left, bottom], [left, topGap], [left, topTooth], [left + t, topTooth], [left + t, topGap],
+    [left + t * 2, topGap], [left + t * 2, topTooth], [left + t * 3, topTooth], [left + t * 3, topGap],
+    [left + t * 4, topGap], [left + t * 4, topTooth], [right, topTooth], [right, topGap], [right, bottom],
+  ];
+}
+
+// 陣営名ごとに色を固定して割り当てる(簡易ハッシュ。同じ陣営は常に同じ色になる)。陣営未設定は既定色
+const FACTION_PALETTE = ['#5b37b7', '#c0392b', '#1f8a5f', '#c98a1a', '#2f6fb0', '#9b4fc9', '#4a4a4a', '#b5456b'];
+function factionColorOf(faction) {
+  if (!faction) return '#5b37b7';
+  let hash = 0;
+  for (let i = 0; i < faction.length; i++) hash = (hash * 31 + faction.charCodeAt(i)) >>> 0;
+  return FACTION_PALETTE[hash % FACTION_PALETTE.length];
+}
+
+// 布陣図の下に、登場している陣営と色の対応を示す凡例を出す(陣営未設定の参加者しかいない時は何も出ない)
+function renderMapLegend(elId, participants) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const factions = [...new Set(participants.filter((p) => p.position && (p.faction || '').trim()).map((p) => p.faction.trim()))];
+  el.innerHTML = factions.map((f) => `<span class="map-legend-item"><span class="map-legend-dot" style="background:${factionColorOf(f)}"></span>${escapeHtml(f)}</span>`).join('');
+}
+
 function renderMapSvg(svg, shapes, participants, pm, interactive) {
   svg.innerHTML = '';
   svg.appendChild(svgEl('rect', { x: 0, y: 0, width: 400, height: 300, fill: '#dfe8d8' }));
@@ -1128,20 +1157,22 @@ function renderMapSvg(svg, shapes, participants, pm, interactive) {
       }
     } else if (shape.type === 'castle') {
       const g = svgEl('g', { 'data-kind': 'shape', 'data-shape-idx': idx });
-      g.appendChild(svgEl('rect', { x: shape.x - 13, y: shape.y - 13, width: 26, height: 26, rx: 3, fill: '#a9896a', stroke: '#5f4a32', 'stroke-width': 1.5 }));
+      const pts = castlePoints(shape.x, shape.y).map((p) => p.join(',')).join(' ');
+      g.appendChild(svgEl('polygon', { points: pts, fill: '#a9896a', stroke: '#5f4a32', 'stroke-width': 1.5, 'stroke-linejoin': 'round' }));
       const label = svgEl('text', { x: shape.x, y: shape.y + 24, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: '#1c1530' });
       label.textContent = shape.name || '城';
       g.appendChild(label);
       svg.appendChild(g);
     }
   });
+  // 布陣図らしく、参加者の色は陣営ごとに固定(死亡は輪を赤くして区別する。陣営未設定は既定色1色にまとまる)
   participants.forEach((p, idx) => {
     if (!p.position) return;
     const person = pm.get(p.personId);
     const name = person ? person.name : '?';
-    const color = p.status === '死亡' ? '#d1374a' : '#5b37b7';
+    const dead = p.status === '死亡';
     const g = svgEl('g', { 'data-kind': 'marker', 'data-participant-idx': idx });
-    g.appendChild(svgEl('circle', { cx: p.position.x, cy: p.position.y, r: 14, fill: color, stroke: '#fff', 'stroke-width': 2 }));
+    g.appendChild(svgEl('circle', { cx: p.position.x, cy: p.position.y, r: 14, fill: factionColorOf(p.faction), stroke: dead ? '#d1374a' : '#fff', 'stroke-width': dead ? 3 : 2 }));
     const text = svgEl('text', { x: p.position.x, y: p.position.y + 26, 'text-anchor': 'middle', 'font-size': 11, fill: '#1c1530' });
     text.textContent = name.slice(0, 6);
     g.appendChild(text);
@@ -1161,6 +1192,7 @@ function svgPoint(svg, e) {
 function redrawMapEditor() {
   const svg = document.getElementById('map-svg');
   renderMapSvg(svg, mapDraftShapes, mapDraftParticipants, peopleMapCache(), true);
+  renderMapLegend('map-legend', mapDraftParticipants);
 }
 
 function renderMapToolbar() {

@@ -112,9 +112,11 @@
       <div class="detail-sub" id="event-year"></div>
       <div class="detail-sub" id="event-description"></div>
     </div>
-    <div class="detail-actions"><button class="btn-secondary" id="event-map-btn">地形・配置を編集</button></div>
+    <div class="detail-actions"><button class="btn-secondary" id="event-map-btn">布陣図を編集</button></div>
+    <div class="section-label" id="event-map-label" style="display:none;">布陣図</div>
     <div class="map-canvas-wrap" id="event-map-preview-wrap" style="display:none;">
       <svg id="event-map-preview" class="map-canvas" viewBox="0 0 400 300"></svg>
+      <div id="event-map-legend" class="map-legend"></div>
     </div>
     <div class="section-label">参加者</div>
     <ul id="event-participants" class="list"></ul>
@@ -123,15 +125,17 @@
     <ul id="event-children-list" class="list"></ul>
   </section>
 
-  <!-- ===== 地形配置エディタ ===== -->
+  <!-- ===== 布陣図エディタ ===== -->
   <section id="view-event-map-editor" class="view">
     <div class="topbar">
       <button class="icon-btn back" data-back>‹ 戻る</button>
+      <h1>布陣図</h1>
       <div class="topbar-actions"><button class="icon-btn" id="map-save-btn">保存</button></div>
     </div>
     <div class="map-toolbar" id="map-toolbar"></div>
-    <div class="map-hint">地形ボタンを選んでからキャンバスをタップで配置。参加者のマーカーや地形はドラッグで移動、川は両端の丸いつまみをドラッグすると向き・長さを変えられます。「高さ・名前を変更」を選んでタップすると、山の標高(大きさ)を切り替え、城の名前を変更できます。「削除」を選んでタップすると消せます。</div>
+    <div class="map-hint">地形ボタンを選んでからキャンバスをタップで配置。参加者のマーカーや地形はドラッグで移動、川は両端の丸いつまみをドラッグすると向き・長さを変えられます。「高さ・名前を変更」を選んでタップすると、山の標高(大きさ)を切り替え、城の名前を変更できます。「削除」を選んでタップすると消せます。参加者の色は陣営ごとに自動で分かれます(死亡時は輪が赤くなります)。</div>
     <div class="map-canvas-wrap"><svg id="map-svg" class="map-canvas" viewBox="0 0 400 300"></svg></div>
+    <div id="map-legend" class="map-legend"></div>
   </section>
 
   <!-- ===== メモから出来事を作成 ===== -->
