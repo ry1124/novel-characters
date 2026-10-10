@@ -1079,7 +1079,7 @@ function renderPersonPickerList(query) {
   const list = people
     .filter((p) => !exclude.has(p.id))
     .filter((p) => !q || [p.name, p.kana, p.youmei, p.maidenName].filter(Boolean).some((s) => s.includes(q)))
-    .slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
+    .slice().sort((a, b) => (a.kana || a.name || '').localeCompare(b.kana || b.name || '', 'ja'));
   document.getElementById('person-picker-list').innerHTML = list.length
     ? list.map((p) => `<button type="button" class="sheet-btn" data-picker-person="${p.id}">${escapeHtml(p.name)}</button>`).join('')
     : '<div class="person-picker-empty">該当する人物がいません</div>';
