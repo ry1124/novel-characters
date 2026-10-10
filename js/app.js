@@ -1335,10 +1335,12 @@ function renderFamilyTree() {
   const mother = p.motherId != null ? personById(p.motherId) : null;
   const adoptiveFather = p.adoptiveFatherId != null ? personById(p.adoptiveFatherId) : null;
   const adoptiveMother = p.adoptiveMotherId != null ? personById(p.adoptiveMotherId) : null;
+  // 並び順は「父・母」「養父・養母」のように夫婦の組が隣り合うようにする(父と母の間に養父が挟まると、
+  // 父母を結ぶ婚姻線が養父の箱の真裏を通って「養父が両方と結婚している」ように見えてしまうため)
   const parentEntries = [
     father ? { person: father, label: '父', rel: 'father' } : null,
-    adoptiveFather ? { person: adoptiveFather, label: '養父', rel: 'adoptiveFather' } : null,
     mother ? { person: mother, label: '母', rel: 'mother' } : null,
+    adoptiveFather ? { person: adoptiveFather, label: '養父', rel: 'adoptiveFather' } : null,
     adoptiveMother ? { person: adoptiveMother, label: '養母', rel: 'adoptiveMother' } : null,
   ].filter(Boolean);
 
