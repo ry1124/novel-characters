@@ -1203,6 +1203,20 @@ async function syncDeathYearsFromParticipants(ev) {
   }
 }
 
+// 子出来事の参加者は、親出来事にも自動で参加者として追加する(まだ参加していない人のみ。既存の参加者のstatus等は変更しない)
+async function syncParticipantsToParentEvent(ev) {
+  if (ev.parentEventId == null) return;
+  const parent = eventById(ev.parentEventId);
+  if (!parent) return;
+  const existingIds = new Set((parent.participants || []).map((p) => p.personId));
+  const newOnes = (ev.participants || [])
+    .filter((p) => !existingIds.has(p.personId))
+    .map((p) => ({ personId: p.personId, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [] }));
+  if (!newOnes.length) return;
+  parent.participants = [...(parent.participants || []), ...newOnes];
+  await DB.updateEvent(parent);
+}
+
 async function saveEventForm() {
   const title = document.getElementById('event-form-title').value.trim();
   if (!title) { alert('出来事を入力してください'); return; }
@@ -1225,10 +1239,12 @@ async function saveEventForm() {
     await DB.updateEvent(ev);
     currentEventId = ev.id;
     await syncDeathYearsFromParticipants(ev);
+    await syncParticipantsToParentEvent(ev);
   } else {
     const id = await DB.addEvent({ title, category, year, month, endYear, endMonth, description, terrainMap: null, participants: draftParticipants, parentEventId: eventFormParentId });
     currentEventId = id;
     await syncDeathYearsFromParticipants({ year, participants: draftParticipants });
+    await syncParticipantsToParentEvent({ parentEventId: eventFormParentId, participants: draftParticipants });
   }
   await refreshAll();
   formDirty = false;
