@@ -1268,17 +1268,25 @@ async function syncDeathYearsFromParticipants(ev) {
   }
 }
 
-// 子出来事の参加者は、親出来事にも自動で参加者として追加する(まだ参加していない人のみ。既存の参加者のstatus等は変更しない)
+// 子出来事の参加者は、親出来事にも自動で参加者として追加する(まだ参加していない人のみ)。
+// 既に親出来事にも参加している場合、子出来事で死亡していれば親出来事側も死亡に更新する(回復はさせない)
 async function syncParticipantsToParentEvent(ev) {
   if (ev.parentEventId == null) return;
   const parent = eventById(ev.parentEventId);
   if (!parent) return;
-  const existingIds = new Set((parent.participants || []).map((p) => p.personId));
-  const newOnes = (ev.participants || [])
-    .filter((p) => !existingIds.has(p.personId))
-    .map((p) => ({ personId: p.personId, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [] }));
-  if (!newOnes.length) return;
-  parent.participants = [...(parent.participants || []), ...newOnes];
+  const byId = new Map((parent.participants || []).map((p) => [p.personId, p]));
+  let changed = false;
+  for (const part of ev.participants || []) {
+    const existing = byId.get(part.personId);
+    if (existing) {
+      if (part.status === '死亡' && existing.status !== '死亡') { existing.status = '死亡'; changed = true; }
+    } else {
+      byId.set(part.personId, { personId: part.personId, status: part.status, note: '', position: null, killedPersonIds: [], injuredPersonIds: [] });
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  parent.participants = Array.from(byId.values());
   await DB.updateEvent(parent);
 }
 
