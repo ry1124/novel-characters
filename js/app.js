@@ -1343,9 +1343,15 @@ function initMapEditorEvents() {
     redrawMapEditor();
   });
   window.addEventListener('pointerup', () => {
-    // なぞらずタップだけで終わった(点が1つしかない)場合は、何も描けていないので取り消す
+    // なぞらずタップだけで終わった(点が1つしかない)場合: 山はタップだけでも置けるよう既定の形にする。
+    // 川は線にならないので取り消す(なぞって描いてもらう)
     if (mapDragging && mapDragging.kind === 'draw' && mapDragging.shape.points.length < 2) {
-      mapDraftShapes = mapDraftShapes.filter((s) => s !== mapDragging.shape);
+      if (mapDragging.shape.type === 'hill') {
+        const pt = mapDragging.shape.points[0];
+        mapDragging.shape.points = hillPoints(pt.x, pt.y, mapDragging.shape.elevation || 2).map(([x, y]) => ({ x, y }));
+      } else {
+        mapDraftShapes = mapDraftShapes.filter((s) => s !== mapDragging.shape);
+      }
       redrawMapEditor();
     }
     mapDragging = null;
