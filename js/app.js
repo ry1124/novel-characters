@@ -1505,6 +1505,21 @@ async function syncDeathYearsFromParticipants(ev) {
   }
 }
 
+// 出来事の参加者に設定した陣営を、人物側の陣営履歴(factions)にも自動反映する。
+// 「その年にその陣営」という組み合わせがまだ無い時だけ追加する(同じ出来事を何度保存しても重複登録されない)
+async function syncFactionsFromParticipants(ev) {
+  for (const part of ev.participants || []) {
+    const faction = (part.faction || '').trim();
+    if (!faction) continue;
+    const person = personById(part.personId);
+    if (!person) continue;
+    const list = person.factions || [];
+    if (list.some((f) => f.faction === faction && f.startYear === ev.year)) continue;
+    person.factions = [...list, { faction, startYear: ev.year }].sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+    await DB.updatePerson(person);
+  }
+}
+
 // 子出来事の参加者は、親出来事にも自動で参加者として追加する(まだ参加していない人のみ)。
 // 既に親出来事にも参加している場合、子出来事で死亡していれば親出来事側も死亡に更新する(回復はさせない)
 async function syncParticipantsToParentEvent(ev) {
@@ -1549,11 +1564,13 @@ async function saveEventForm() {
     await DB.updateEvent(ev);
     currentEventId = ev.id;
     await syncDeathYearsFromParticipants(ev);
+    await syncFactionsFromParticipants(ev);
     await syncParticipantsToParentEvent(ev);
   } else {
     const id = await DB.addEvent({ title, category, year, month, endYear, endMonth, description, terrainMap: null, participants: draftParticipants, parentEventId: eventFormParentId });
     currentEventId = id;
     await syncDeathYearsFromParticipants({ year, participants: draftParticipants });
+    await syncFactionsFromParticipants({ year, participants: draftParticipants });
     await syncParticipantsToParentEvent({ parentEventId: eventFormParentId, participants: draftParticipants });
   }
   await refreshAll();
