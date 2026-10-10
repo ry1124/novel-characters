@@ -230,6 +230,19 @@ function renderAbilityList() {
     </li>`).join('');
 }
 
+// ===== 人物フォーム: 武器(複数、名前のみ)編集 =====
+let weaponDraftRows = [];
+let weaponRowSeq = 0;
+function nextWeaponRowId() { return 'weapon' + (weaponRowSeq++); }
+
+function renderWeaponList() {
+  const listEl = document.getElementById('person-weapon-list');
+  listEl.innerHTML = weaponDraftRows.map((row) => `<li class="participant-row summary-row" data-row-id="${row.rowId}">
+      <input class="pwp-name" type="text" value="${escapeHtml(row.weapon || '')}" placeholder="武器名">
+      <button type="button" class="remove-btn" data-remove-weapon="${row.rowId}">×</button>
+    </li>`).join('');
+}
+
 // ===== 人物フォーム: 技(複数、名前のみ)編集 =====
 let skillDraftRows = [];
 let skillRowSeq = 0;
@@ -424,6 +437,7 @@ function openPersonForm(id) {
     qualificationDraftRows = (p.qualifications || []).map((q) => ({ rowId: nextQualificationRowId(), qualification: q.qualification, startYear: q.startYear, endYear: q.endYear }));
     medalDraftRows = (p.medals || []).map((m) => ({ rowId: nextMedalRowId(), medal: m.medal, startYear: m.startYear }));
     abilityDraftRows = (p.abilities || []).map((a) => ({ rowId: nextAbilityRowId(), ability: a.ability }));
+    weaponDraftRows = (p.weapons || []).map((w) => ({ rowId: nextWeaponRowId(), weapon: w.weapon }));
     skillDraftRows = (p.skills || []).map((s) => ({ rowId: nextSkillRowId(), skill: s.skill, description: s.description }));
     relationshipDraftRows = (p.relationships || []).map((r) => ({ rowId: nextRelationshipRowId(), personId: r.personId, type: r.type }));
     initialFatherId = p.fatherId != null ? String(p.fatherId) : '';
@@ -438,6 +452,7 @@ function openPersonForm(id) {
     qualificationDraftRows = [];
     medalDraftRows = [];
     abilityDraftRows = [];
+    weaponDraftRows = [];
     skillDraftRows = [];
     relationshipDraftRows = [];
     initialFatherId = '';
@@ -469,6 +484,7 @@ function openPersonForm(id) {
   renderQualificationList();
   renderMedalList();
   renderAbilityList();
+  renderWeaponList();
   renderSkillList();
   renderRelationshipList();
   renderSpouseList();
@@ -580,6 +596,7 @@ function renderPersonDetail() {
   document.getElementById('person-qualifications').textContent = (p.qualifications || []).map((q) => `${q.qualification}(${formatRolePeriod(q)})`).join('、');
   document.getElementById('person-medals').textContent = (p.medals || []).map((m) => `${m.medal}${m.startYear != null ? `(${m.startYear}年)` : ''}`).join('、');
   document.getElementById('person-abilities').textContent = (p.abilities || []).length ? `能力: ${(p.abilities || []).map((a) => a.ability).join('、')}` : '';
+  document.getElementById('person-weapons').textContent = (p.weapons || []).length ? `武器: ${(p.weapons || []).map((w) => w.weapon).join('、')}` : '';
   document.getElementById('person-skills').textContent = (p.skills || []).length
     ? `技: ${(p.skills || []).map((s) => s.description ? `${s.skill}(${s.description})` : s.skill).join('、')}`
     : '';
@@ -1149,6 +1166,9 @@ async function savePersonForm() {
   const abilities = abilityDraftRows
     .filter((a) => (a.ability || '').trim())
     .map((a) => ({ ability: a.ability.trim() }));
+  const weapons = weaponDraftRows
+    .filter((w) => (w.weapon || '').trim())
+    .map((w) => ({ weapon: w.weapon.trim() }));
   const skills = skillDraftRows
     .filter((s) => (s.skill || '').trim())
     .map((s) => ({ skill: s.skill.trim(), description: (s.description || '').trim() }));
@@ -1167,14 +1187,14 @@ async function savePersonForm() {
     oldSpouseIds = p.spouseIds || [];
     p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.episode = episode; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
     p.roles = roles; p.affiliations = affiliations; p.qualifications = qualifications; p.medals = medals;
-    p.abilities = abilities; p.skills = skills; p.relationships = relationships;
+    p.abilities = abilities; p.weapons = weapons; p.skills = skills; p.relationships = relationships;
     p.birthYear = birthYear; p.deathYear = deathYear;
     p.fatherId = fatherId; p.motherId = motherId; p.spouseIds = spouseIds;
     await DB.updatePerson(p);
   } else {
     personId = await DB.addPerson({
       name, kana, youmei, maidenName, episode, genpukuYear, genpukuMonth, roles, affiliations, qualifications, medals,
-      abilities, skills, relationships, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now(),
+      abilities, weapons, skills, relationships, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now(),
     });
     currentPersonId = personId;
   }
@@ -2379,6 +2399,27 @@ function wireForms() {
     if (!btn) return;
     abilityDraftRows = abilityDraftRows.filter((a) => a.rowId !== btn.dataset.removeAbility);
     renderAbilityList();
+  });
+
+  document.getElementById('person-weapon-add-btn').addEventListener('click', () => {
+    const nameEl = document.getElementById('person-weapon-add-name');
+    const weapon = nameEl.value.trim();
+    if (!weapon) return;
+    weaponDraftRows.push({ rowId: nextWeaponRowId(), weapon });
+    nameEl.value = '';
+    renderWeaponList();
+  });
+  document.getElementById('person-weapon-list').addEventListener('input', (e) => {
+    const row = e.target.closest('.summary-row');
+    if (!row) return;
+    const draft = weaponDraftRows.find((w) => w.rowId === row.dataset.rowId);
+    if (draft && e.target.classList.contains('pwp-name')) draft.weapon = e.target.value;
+  });
+  document.getElementById('person-weapon-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-weapon]');
+    if (!btn) return;
+    weaponDraftRows = weaponDraftRows.filter((w) => w.rowId !== btn.dataset.removeWeapon);
+    renderWeaponList();
   });
 
   document.getElementById('person-skill-add-btn').addEventListener('click', () => {
