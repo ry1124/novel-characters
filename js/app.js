@@ -692,7 +692,8 @@ function renderEventDetail() {
 
   const pm = peopleMapCache();
   const listEl = document.getElementById('event-participants');
-  listEl.innerHTML = (ev.participants || []).map((p) => {
+  const participants = ev.participants || [];
+  const participantItemHtml = (p) => {
     const person = pm.get(p.personId);
     const age = person ? personAgeAt(person, ev.year) : null;
     const killedNames = killedIdsOf(p).map((id) => pm.get(id)).filter(Boolean).map((o) => o.name);
@@ -706,7 +707,21 @@ function renderEventDetail() {
       <span class="status-pill ${STATUS_CLASS[p.status] || 'unknown'}">${p.status || '不明'}</span>
       <span class="list-item-chevron">›</span>
     </li>`;
-  }).join('');
+  };
+  // 誰か1人でも陣営が設定されていれば、陣営ごとにグループ分けして表示する
+  if (participants.some((p) => (p.faction || '').trim())) {
+    const groups = new Map();
+    participants.forEach((p) => {
+      const key = (p.faction || '').trim() || '(陣営未設定)';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(p);
+    });
+    listEl.innerHTML = Array.from(groups.entries())
+      .map(([faction, items]) => `<li class="list-group-header">${escapeHtml(faction)}</li>${items.map(participantItemHtml).join('')}`)
+      .join('');
+  } else {
+    listEl.innerHTML = participants.map(participantItemHtml).join('');
+  }
 
   const wrap = document.getElementById('event-map-preview-wrap');
   const svg = document.getElementById('event-map-preview');
@@ -844,6 +859,11 @@ function renderBulkAffiliationPersonList() {
 // ===== 出来事フォーム: 参加者編集 =====
 function renderEventFormParticipants() {
   const pm = peopleMapCache();
+  // 他の出来事で既に使われている陣営名を候補に出す(表記ゆれ防止)
+  const factionNames = new Set();
+  events.forEach((ev) => (ev.participants || []).forEach((p) => { if (p.faction) factionNames.add(p.faction); }));
+  document.getElementById('event-faction-datalist').innerHTML =
+    Array.from(factionNames).map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
   const listEl = document.getElementById('event-form-participants');
   listEl.innerHTML = draftParticipants.map((p) => {
     const person = pm.get(p.personId);
@@ -867,6 +887,9 @@ function renderEventFormParticipants() {
         <div class="list-item-main">${escapeHtml(person ? person.name : '(不明)')}</div>
         <select class="pf-status">${options}</select>
         <button type="button" class="remove-btn" data-remove="${p.personId}">×</button>
+      </div>
+      <div class="participant-row-bottom">
+        <input class="pf-faction" type="text" placeholder="陣営(例: 東軍)" value="${escapeHtml(p.faction || '')}" list="event-faction-datalist">
       </div>
       <div class="participant-row-bottom">
         <select class="pf-kill">${killOptions}</select>
@@ -1319,7 +1342,7 @@ async function syncParticipantsToParentEvent(ev) {
     if (existing) {
       if (part.status === '死亡' && existing.status !== '死亡') { existing.status = '死亡'; changed = true; }
     } else {
-      byId.set(part.personId, { personId: part.personId, status: part.status, note: '', position: null, killedPersonIds: [], injuredPersonIds: [] });
+      byId.set(part.personId, { personId: part.personId, status: part.status, note: '', position: null, killedPersonIds: [], injuredPersonIds: [], faction: part.faction || '' });
       changed = true;
     }
   }
@@ -1428,7 +1451,7 @@ function createEventFromMemo() {
   document.getElementById('event-form-end-year').value = '';
   document.getElementById('event-form-end-month').value = '';
   document.getElementById('event-form-description').value = memo;
-  draftParticipants = Array.from(memoDetectedPersonIds).map((pid) => ({ personId: pid, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [] }));
+  draftParticipants = Array.from(memoDetectedPersonIds).map((pid) => ({ personId: pid, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [], faction: '' }));
   renderEventFormParticipants();
   renderAddPersonSelect();
   navigateTo('view-edit-event');
@@ -2142,7 +2165,7 @@ function wireForms() {
     const sel = document.getElementById('event-form-add-person');
     const personId = await resolvePersonFromSelect(sel, '参加者');
     if (personId == null || draftParticipants.some((p) => p.personId === personId)) return;
-    draftParticipants.push({ personId, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [] });
+    draftParticipants.push({ personId, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [], faction: '' });
     renderEventFormParticipants();
     renderAddPersonSelect();
   });
@@ -2169,6 +2192,7 @@ function wireForms() {
     const draft = draftParticipants.find((p) => p.personId === pid);
     if (!draft) return;
     if (e.target.classList.contains('pf-note')) draft.note = e.target.value;
+    else if (e.target.classList.contains('pf-faction')) draft.faction = e.target.value;
   });
   participantsList.addEventListener('click', (e) => {
     const removeBtn = e.target.closest('[data-remove]');
