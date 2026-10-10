@@ -237,9 +237,12 @@ function nextSkillRowId() { return 'skill' + (skillRowSeq++); }
 
 function renderSkillList() {
   const listEl = document.getElementById('person-skill-list');
-  listEl.innerHTML = skillDraftRows.map((row) => `<li class="participant-row summary-row" data-row-id="${row.rowId}">
-      <input class="psk-name" type="text" value="${escapeHtml(row.skill || '')}" placeholder="技名">
-      <button type="button" class="remove-btn" data-remove-skill="${row.rowId}">×</button>
+  listEl.innerHTML = skillDraftRows.map((row) => `<li class="skill-row" data-row-id="${row.rowId}">
+      <div class="skill-row-top">
+        <input class="psk-name" type="text" value="${escapeHtml(row.skill || '')}" placeholder="技名">
+        <button type="button" class="remove-btn" data-remove-skill="${row.rowId}">×</button>
+      </div>
+      <textarea class="psk-desc" placeholder="説明(任意)">${escapeHtml(row.description || '')}</textarea>
     </li>`).join('');
 }
 
@@ -401,6 +404,7 @@ function openPersonForm(id) {
   const genpukuMonthEl = document.getElementById('person-form-genpuku-month');
   const birthEl = document.getElementById('person-form-birth');
   const deathEl = document.getElementById('person-form-death');
+  const episodeEl = document.getElementById('person-form-episode');
   let initialFatherId = '';
   let initialMotherId = '';
   if (id) {
@@ -411,6 +415,7 @@ function openPersonForm(id) {
     maidenNameEl.value = p.maidenName || '';
     genpukuYearEl.value = p.genpukuYear ?? '';
     genpukuMonthEl.value = p.genpukuMonth ?? '';
+    episodeEl.value = p.episode || '';
     birthEl.value = p.birthYear ?? '';
     deathEl.value = p.deathYear ?? '';
     summaryDraftRows = loadSummaryRowsForPerson(id);
@@ -419,14 +424,14 @@ function openPersonForm(id) {
     qualificationDraftRows = (p.qualifications || []).map((q) => ({ rowId: nextQualificationRowId(), qualification: q.qualification, startYear: q.startYear, endYear: q.endYear }));
     medalDraftRows = (p.medals || []).map((m) => ({ rowId: nextMedalRowId(), medal: m.medal, startYear: m.startYear }));
     abilityDraftRows = (p.abilities || []).map((a) => ({ rowId: nextAbilityRowId(), ability: a.ability }));
-    skillDraftRows = (p.skills || []).map((s) => ({ rowId: nextSkillRowId(), skill: s.skill }));
+    skillDraftRows = (p.skills || []).map((s) => ({ rowId: nextSkillRowId(), skill: s.skill, description: s.description }));
     relationshipDraftRows = (p.relationships || []).map((r) => ({ rowId: nextRelationshipRowId(), personId: r.personId, type: r.type }));
     initialFatherId = p.fatherId != null ? String(p.fatherId) : '';
     initialMotherId = p.motherId != null ? String(p.motherId) : '';
     spouseDraftIds = (p.spouseIds || []).slice();
   } else {
     nameEl.value = ''; kanaEl.value = ''; youmeiEl.value = ''; maidenNameEl.value = '';
-    genpukuYearEl.value = ''; genpukuMonthEl.value = ''; birthEl.value = ''; deathEl.value = '';
+    genpukuYearEl.value = ''; genpukuMonthEl.value = ''; birthEl.value = ''; deathEl.value = ''; episodeEl.value = '';
     summaryDraftRows = [];
     roleDraftRows = [];
     affiliationDraftRows = [];
@@ -456,6 +461,8 @@ function openPersonForm(id) {
   document.getElementById('person-qualification-add-name').value = '';
   document.getElementById('person-medal-add-start').value = '';
   document.getElementById('person-medal-add-name').value = '';
+  document.getElementById('person-skill-add-name').value = '';
+  document.getElementById('person-skill-add-description').value = '';
   renderSummaryList();
   renderRoleList();
   renderAffiliationList();
@@ -573,8 +580,12 @@ function renderPersonDetail() {
   document.getElementById('person-qualifications').textContent = (p.qualifications || []).map((q) => `${q.qualification}(${formatRolePeriod(q)})`).join('、');
   document.getElementById('person-medals').textContent = (p.medals || []).map((m) => `${m.medal}${m.startYear != null ? `(${m.startYear}年)` : ''}`).join('、');
   document.getElementById('person-abilities').textContent = (p.abilities || []).length ? `能力: ${(p.abilities || []).map((a) => a.ability).join('、')}` : '';
-  document.getElementById('person-skills').textContent = (p.skills || []).length ? `技: ${(p.skills || []).map((s) => s.skill).join('、')}` : '';
+  document.getElementById('person-skills').textContent = (p.skills || []).length
+    ? `技: ${(p.skills || []).map((s) => s.description ? `${s.skill}(${s.description})` : s.skill).join('、')}`
+    : '';
   document.getElementById('person-years').textContent = formatPersonYears(p);
+  document.getElementById('person-episode').textContent = p.episode || '';
+  document.getElementById('person-episode-label').style.display = p.episode ? '' : 'none';
 
   const death = getDeathInfo(p.id);
   const banner = document.getElementById('person-death-banner');
@@ -1098,6 +1109,7 @@ async function savePersonForm() {
   const kana = document.getElementById('person-form-kana').value.trim();
   const youmei = document.getElementById('person-form-youmei').value.trim();
   const maidenName = document.getElementById('person-form-maiden-name').value.trim();
+  const episode = document.getElementById('person-form-episode').value.trim();
   const genpukuYearVal = document.getElementById('person-form-genpuku-year').value;
   const genpukuMonthVal = document.getElementById('person-form-genpuku-month').value;
   const genpukuYear = genpukuYearVal ? clampYear(genpukuYearVal) : null;
@@ -1139,7 +1151,7 @@ async function savePersonForm() {
     .map((a) => ({ ability: a.ability.trim() }));
   const skills = skillDraftRows
     .filter((s) => (s.skill || '').trim())
-    .map((s) => ({ skill: s.skill.trim() }));
+    .map((s) => ({ skill: s.skill.trim(), description: (s.description || '').trim() }));
   const relationships = relationshipDraftRows
     .filter((r) => r.personId != null && (r.type || '').trim())
     .map((r) => ({ personId: r.personId, type: r.type.trim() }));
@@ -1153,7 +1165,7 @@ async function savePersonForm() {
   if (editingPersonId) {
     const p = personById(editingPersonId);
     oldSpouseIds = p.spouseIds || [];
-    p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
+    p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.episode = episode; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
     p.roles = roles; p.affiliations = affiliations; p.qualifications = qualifications; p.medals = medals;
     p.abilities = abilities; p.skills = skills; p.relationships = relationships;
     p.birthYear = birthYear; p.deathYear = deathYear;
@@ -1161,7 +1173,7 @@ async function savePersonForm() {
     await DB.updatePerson(p);
   } else {
     personId = await DB.addPerson({
-      name, kana, youmei, maidenName, genpukuYear, genpukuMonth, roles, affiliations, qualifications, medals,
+      name, kana, youmei, maidenName, episode, genpukuYear, genpukuMonth, roles, affiliations, qualifications, medals,
       abilities, skills, relationships, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now(),
     });
     currentPersonId = personId;
@@ -2371,17 +2383,21 @@ function wireForms() {
 
   document.getElementById('person-skill-add-btn').addEventListener('click', () => {
     const nameEl = document.getElementById('person-skill-add-name');
+    const descEl = document.getElementById('person-skill-add-description');
     const skill = nameEl.value.trim();
     if (!skill) return;
-    skillDraftRows.push({ rowId: nextSkillRowId(), skill });
+    skillDraftRows.push({ rowId: nextSkillRowId(), skill, description: descEl.value.trim() });
     nameEl.value = '';
+    descEl.value = '';
     renderSkillList();
   });
   document.getElementById('person-skill-list').addEventListener('input', (e) => {
-    const row = e.target.closest('.summary-row');
+    const row = e.target.closest('.skill-row');
     if (!row) return;
     const draft = skillDraftRows.find((s) => s.rowId === row.dataset.rowId);
-    if (draft && e.target.classList.contains('psk-name')) draft.skill = e.target.value;
+    if (!draft) return;
+    if (e.target.classList.contains('psk-name')) draft.skill = e.target.value;
+    else if (e.target.classList.contains('psk-desc')) draft.description = e.target.value;
   });
   document.getElementById('person-skill-list').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-remove-skill]');

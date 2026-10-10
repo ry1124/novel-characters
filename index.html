@@ -69,6 +69,8 @@
     <ul id="person-roles-timeline" class="timeline"></ul>
     <div class="section-label">人間関係</div>
     <div id="person-relationships" style="padding:0 16px 8px;"></div>
+    <div class="section-label" id="person-episode-label" style="display:none;">エピソード</div>
+    <div class="detail-sub" id="person-episode" style="padding:0 16px 8px; white-space:pre-wrap;"></div>
     <div class="section-label">経歴年表</div>
     <ul id="person-timeline" class="timeline"></ul>
     <div id="person-timeline-empty" class="empty-state">この人物が参加した出来事はまだありません</div>
@@ -271,6 +273,7 @@
       <div class="form-row">
         <label>技を追加</label>
         <input id="person-skill-add-name" type="text" placeholder="技名(例: 飛影剣)">
+        <textarea id="person-skill-add-description" placeholder="説明(任意)"></textarea>
       </div>
       <button class="btn-secondary" id="person-skill-add-btn" type="button">+ 技を追加</button>
       <div class="section-label" style="padding-left:0;">家族(任意)</div>
@@ -332,6 +335,10 @@
         <option value="好敵手"></option>
       </datalist>
       <button class="btn-secondary" id="person-relationship-add-btn" type="button">+ 関係を追加</button>
+
+      <div class="section-label" style="padding-left:0;">エピソード</div>
+      <div class="form-note">年表に紐付かない自由記述のエピソードを書けます</div>
+      <div class="form-row"><textarea id="person-form-episode" placeholder="エピソードを書く"></textarea></div>
 
       <div class="section-label" style="padding-left:0;">概要(年表)</div>
       <div class="form-note">年月と詳細を入力すると、この人物の「出来事」として自動的に登録されます</div>

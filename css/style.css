@@ -206,6 +206,12 @@ html, body {
 .summary-row select { flex: none; width: 56px; font-size: 13px; padding: 6px 4px; border-radius: 8px; background: var(--surface2); border: 0; color: var(--text); }
 .summary-row input[type="text"] { flex: 1; min-width: 0; font-size: 14px; padding: 6px 8px; border-radius: 8px; background: var(--surface2); border: 0; color: var(--text); }
 
+/* ===== 技(名前+説明の2段組み) ===== */
+.skill-row { padding: 8px 0; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.skill-row-top { display: flex; align-items: center; gap: 8px; }
+.skill-row-top input[type="text"] { flex: 1; min-width: 0; font-size: 14px; padding: 6px 8px; border-radius: 8px; background: var(--surface2); border: 0; color: var(--text); }
+.skill-row textarea { font-size: 13px; padding: 6px 8px; border-radius: 8px; background: var(--surface2); border: 0; color: var(--text); resize: vertical; min-height: 40px; font-family: inherit; }
+
 .settings-btn-row { padding: 10px 0; }
 .settings-action { border: 0; border-radius: 10px; padding: 10px 14px; background: var(--surface2); color: var(--accent); font-size: 15px; font-weight: 600; }
 .settings-action:disabled { opacity: 0.5; }
