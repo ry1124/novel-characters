@@ -1342,21 +1342,24 @@ async function savePersonForm() {
       affiliation: a.affiliation.trim(),
       startYear: a.startYear != null && a.startYear !== '' ? clampYear(a.startYear) : null,
       endYear: a.endYear != null && a.endYear !== '' ? clampYear(a.endYear) : null,
-    }));
+    }))
+    .sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   const qualifications = qualificationDraftRows
     .filter((q) => (q.qualification || '').trim())
     .map((q) => ({
       qualification: q.qualification.trim(),
       startYear: q.startYear != null && q.startYear !== '' ? clampYear(q.startYear) : null,
       endYear: q.endYear != null && q.endYear !== '' ? clampYear(q.endYear) : null,
-    }));
+    }))
+    .sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   const medals = medalDraftRows
     .filter((m) => (m.medal || '').trim())
     .map((m) => ({
       medal: m.medal.trim(),
       rank: (m.rank || '').trim(),
       startYear: m.startYear != null && m.startYear !== '' ? clampYear(m.startYear) : null,
-    }));
+    }))
+    .sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   // 陣営が変わっても矢印(→)で推移を表せるよう、所属年の昇順に並べ替えてから保存する
   const factions = factionDraftRows
     .filter((f) => (f.faction || '').trim())
