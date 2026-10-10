@@ -1096,25 +1096,17 @@ function svgEl(tag, attrs) {
   return el;
 }
 
-// 山も川と同じく、ペンで書いたような滑らかな輪郭にするため、なぞった点の配列(points)として持つ。
-// 標高(elevation 1〜3)が高いほど大きく・色が濃くなる(等高線図のように大きさで高さを表現する)
+// 山はタップで置く元の方式に戻す(標高1〜3が高いほど大きく・色が濃くなる台形)
 const HILL_ELEVATIONS = [1, 2, 3];
 const HILL_COLORS = { 1: '#aebb8f', 2: '#8a9a6b', 3: '#64744a' };
-const HILL_SCALE_OF = (elevation) => 0.7 + (elevation || 2) * 0.3; // 1→1.0倍, 2→1.3倍, 3→1.6倍
-// なぞらずタップだけで置いた場合など、点が無い旧データ用の既定の輪郭(台形っぽい4点)
 function hillPoints(cx, cy, elevation) {
-  const scale = HILL_SCALE_OF(elevation);
+  const scale = 0.7 + (elevation || 2) * 0.3; // 1→1.0倍, 2→1.3倍, 3→1.6倍
   return [[cx - 20 * scale, cy + 12 * scale], [cx - 9 * scale, cy - 14 * scale], [cx + 9 * scale, cy - 14 * scale], [cx + 20 * scale, cy + 12 * scale]];
 }
+// なぞって描いていた旧データ(points配列)が残っていても表示だけは崩れないようにするフォールバック
 function hillOutlinePoints(shape) {
   if (shape.points) return shape.points;
   return hillPoints(shape.x, shape.y, shape.elevation || 2).map(([x, y]) => ({ x, y }));
-}
-// 重心を中心に拡大縮小する(標高を切り替えた時、なぞって描いた輪郭ごと大きさを変えるために使う)
-function scalePointsAroundCentroid(points, factor) {
-  const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
-  const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
-  return points.map((p) => ({ x: cx + (p.x - cx) * factor, y: cy + (p.y - cy) * factor }));
 }
 
 // 川はペンで書いたような滑らかな曲線にするため、なぞった点の配列(points)として持つ。
@@ -1138,22 +1130,6 @@ function smoothPathD(points) {
   const last = points[points.length - 1];
   d += ` L${last.x},${last.y}`;
   return d;
-}
-
-// 同じ要領で、ひと続きの輪になった滑らかな閉じた形にする(山の塗りつぶし輪郭に使う)。
-// 山は線ではなく面として塗りつぶしで表すため、点が少ない間も(開いた線にせず)必ず閉じた形を返す
-function smoothClosedPathD(points) {
-  if (points.length < 2) return '';
-  if (points.length === 2) return `M${points[0].x},${points[0].y} L${points[1].x},${points[1].y} Z`;
-  const n = points.length;
-  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-  const start = mid(points[n - 1], points[0]);
-  let d = `M${start.x},${start.y}`;
-  for (let i = 0; i < n; i++) {
-    const m = mid(points[i], points[(i + 1) % n]);
-    d += ` Q${points[i].x},${points[i].y} ${m.x},${m.y}`;
-  }
-  return d + ' Z';
 }
 
 // 城は地図記号(城跡記号)のように、凹凸のある城壁(クレネレーション)のシルエットで表す
@@ -1192,8 +1168,8 @@ function renderMapSvg(svg, shapes, participants, pm) {
   shapes.forEach((shape, idx) => {
     if (shape.type === 'hill') {
       const elevation = shape.elevation || 2;
-      const d = smoothClosedPathD(hillOutlinePoints(shape));
-      svg.appendChild(svgEl('path', { d, fill: HILL_COLORS[elevation] || HILL_COLORS[2], stroke: '#5f6f45', 'stroke-width': 1.5, 'stroke-linejoin': 'round', 'data-kind': 'shape', 'data-shape-idx': idx }));
+      const pts = hillOutlinePoints(shape).map((p) => `${p.x},${p.y}`).join(' ');
+      svg.appendChild(svgEl('polygon', { points: pts, fill: HILL_COLORS[elevation] || HILL_COLORS[2], stroke: '#5f6f45', 'stroke-width': 1.5, 'data-kind': 'shape', 'data-shape-idx': idx }));
     } else if (shape.type === 'river') {
       const d = smoothPathD(riverPointsOf(shape));
       if (d) svg.appendChild(svgEl('path', { d, fill: 'none', stroke: '#5b8bd0', 'stroke-width': 6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'data-kind': 'shape', 'data-shape-idx': idx }));
@@ -1240,7 +1216,7 @@ function redrawMapEditor() {
 function renderMapToolbar() {
   const bar = document.getElementById('map-toolbar');
   const tools = [
-    { id: 'hill', label: '⛰ 山を描く' },
+    { id: 'hill', label: '⛰ 山を置く' },
     { id: 'river', label: '🌊 川を描く' },
     { id: 'castle', label: '🏯 城を置く' },
     { id: 'edit', label: '✏️ 高さ・名前を変更' },
@@ -1264,11 +1240,9 @@ async function editMapShape(idx) {
   const shape = mapDraftShapes[idx];
   if (!shape) return;
   if (shape.type === 'hill') {
-    // タップするたびに標高(大きさ・色の濃さ)を1→2→3→1と切り替える。なぞって描いた輪郭は重心基準で拡大縮小する
-    const oldElevation = shape.elevation || 2;
-    const newElevation = HILL_ELEVATIONS[(HILL_ELEVATIONS.indexOf(oldElevation) + 1) % HILL_ELEVATIONS.length];
-    if (shape.points) shape.points = scalePointsAroundCentroid(shape.points, HILL_SCALE_OF(newElevation) / HILL_SCALE_OF(oldElevation));
-    shape.elevation = newElevation;
+    // タップするたびに標高(大きさ・色の濃さ)を1→2→3→1と切り替える
+    const i = HILL_ELEVATIONS.indexOf(shape.elevation || 2);
+    shape.elevation = HILL_ELEVATIONS[(i + 1) % HILL_ELEVATIONS.length];
     redrawMapEditor();
   } else if (shape.type === 'castle') {
     const name = await promptText('城の名前', shape.name || '城');
@@ -1306,10 +1280,15 @@ function initMapEditorEvents() {
       }
       return;
     }
-    if (selectedMapTool === 'hill' || selectedMapTool === 'river') {
-      // ペンで書くように、タップした点から始めてなぞった軌跡をそのまま輪郭(山)・線(川)にする
+    if (selectedMapTool === 'hill') {
+      // 山は元の方式どおり、タップした場所にその場で既定の台形を置く
       const pt = svgPoint(svg, e);
-      const newShape = selectedMapTool === 'hill' ? { type: 'hill', points: [pt], elevation: 2 } : { type: 'river', points: [pt] };
+      mapDraftShapes.push({ type: 'hill', x: pt.x, y: pt.y, elevation: 2 });
+      redrawMapEditor();
+    } else if (selectedMapTool === 'river') {
+      // 川はペンで書くように、タップした点から始めてなぞった軌跡をそのまま滑らかな線にする
+      const pt = svgPoint(svg, e);
+      const newShape = { type: 'river', points: [pt] };
       mapDraftShapes.push(newShape);
       mapDragging = { kind: 'draw', shape: newShape, lastPt: pt };
       redrawMapEditor();
@@ -1343,15 +1322,9 @@ function initMapEditorEvents() {
     redrawMapEditor();
   });
   window.addEventListener('pointerup', () => {
-    // なぞらずタップだけで終わった(点が1つしかない)場合: 山はタップだけでも置けるよう既定の形にする。
-    // 川は線にならないので取り消す(なぞって描いてもらう)
+    // 川をなぞらずタップだけで終えた(点が1つしかない)場合は、線にならないので取り消す
     if (mapDragging && mapDragging.kind === 'draw' && mapDragging.shape.points.length < 2) {
-      if (mapDragging.shape.type === 'hill') {
-        const pt = mapDragging.shape.points[0];
-        mapDragging.shape.points = hillPoints(pt.x, pt.y, mapDragging.shape.elevation || 2).map(([x, y]) => ({ x, y }));
-      } else {
-        mapDraftShapes = mapDraftShapes.filter((s) => s !== mapDragging.shape);
-      }
+      mapDraftShapes = mapDraftShapes.filter((s) => s !== mapDragging.shape);
       redrawMapEditor();
     }
     mapDragging = null;
