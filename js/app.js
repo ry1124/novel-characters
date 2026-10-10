@@ -906,7 +906,7 @@ function renderEventDetail() {
   const showMap = shapes.length || placed.length;
   document.getElementById('event-map-label').style.display = showMap ? '' : 'none';
   wrap.style.display = showMap ? '' : 'none';
-  if (showMap) renderMapSvg(svg, shapes, placed, pm, false);
+  if (showMap) renderMapSvg(svg, shapes, placed, pm);
   renderMapLegend('event-map-legend', placed);
 
   const children = events.filter((c) => c.parentEventId === ev.id).sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
@@ -1096,18 +1096,62 @@ function svgEl(tag, attrs) {
   return el;
 }
 
-// 山は標高(elevation 1〜3)が高いほど大きく・色が濃くなる(等高線図のように大きさで高さを表現する)
+// 山も川と同じく、ペンで書いたような滑らかな輪郭にするため、なぞった点の配列(points)として持つ。
+// 標高(elevation 1〜3)が高いほど大きく・色が濃くなる(等高線図のように大きさで高さを表現する)
 const HILL_ELEVATIONS = [1, 2, 3];
 const HILL_COLORS = { 1: '#aebb8f', 2: '#8a9a6b', 3: '#64744a' };
+const HILL_SCALE_OF = (elevation) => 0.7 + (elevation || 2) * 0.3; // 1→1.0倍, 2→1.3倍, 3→1.6倍
+// なぞらずタップだけで置いた場合など、点が無い旧データ用の既定の輪郭(台形っぽい4点)
 function hillPoints(cx, cy, elevation) {
-  const scale = 0.7 + (elevation || 2) * 0.3; // 1→1.0倍, 2→1.3倍, 3→1.6倍
+  const scale = HILL_SCALE_OF(elevation);
   return [[cx - 20 * scale, cy + 12 * scale], [cx - 9 * scale, cy - 14 * scale], [cx + 9 * scale, cy - 14 * scale], [cx + 20 * scale, cy + 12 * scale]];
 }
+function hillOutlinePoints(shape) {
+  if (shape.points) return shape.points;
+  return hillPoints(shape.x, shape.y, shape.elevation || 2).map(([x, y]) => ({ x, y }));
+}
+// 重心を中心に拡大縮小する(標高を切り替えた時、なぞって描いた輪郭ごと大きさを変えるために使う)
+function scalePointsAroundCentroid(points, factor) {
+  const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
+  const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
+  return points.map((p) => ({ x: cx + (p.x - cx) * factor, y: cy + (p.y - cy) * factor }));
+}
 
-// 川は2点(x1,y1)-(x2,y2)の線分として持つ。横向き固定だった旧データ({x,y}のみ)は中心点から横一直線として読み込む
-function riverEndpoints(shape) {
-  if (shape.x1 != null) return { x1: shape.x1, y1: shape.y1, x2: shape.x2, y2: shape.y2 };
-  return { x1: shape.x - 30, y1: shape.y, x2: shape.x + 30, y2: shape.y };
+// 川はペンで書いたような滑らかな曲線にするため、なぞった点の配列(points)として持つ。
+// 旧データ(2点のみ/中心点のみ)は読み込み時にpoints配列へ変換してフォールバックする
+function riverPointsOf(shape) {
+  if (shape.points) return shape.points;
+  if (shape.x1 != null) return [{ x: shape.x1, y: shape.y1 }, { x: shape.x2, y: shape.y2 }];
+  return [{ x: shape.x - 30, y: shape.y }, { x: shape.x + 30, y: shape.y }];
+}
+
+// 点の配列を、各点の中間点を通る2次ベジェで繋いで滑らかな開いた線にする(川に使う。ペン描画の簡易スムージング)
+function smoothPathD(points) {
+  if (points.length < 2) return '';
+  if (points.length === 2) return `M${points[0].x},${points[0].y} L${points[1].x},${points[1].y}`;
+  let d = `M${points[0].x},${points[0].y}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const midX = (points[i].x + points[i + 1].x) / 2;
+    const midY = (points[i].y + points[i + 1].y) / 2;
+    d += ` Q${points[i].x},${points[i].y} ${midX},${midY}`;
+  }
+  const last = points[points.length - 1];
+  d += ` L${last.x},${last.y}`;
+  return d;
+}
+
+// 同じ要領で、ひと続きの輪になった滑らかな閉じた形にする(山の塗りつぶし輪郭に使う)
+function smoothClosedPathD(points) {
+  if (points.length < 3) return smoothPathD(points);
+  const n = points.length;
+  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const start = mid(points[n - 1], points[0]);
+  let d = `M${start.x},${start.y}`;
+  for (let i = 0; i < n; i++) {
+    const m = mid(points[i], points[(i + 1) % n]);
+    d += ` Q${points[i].x},${points[i].y} ${m.x},${m.y}`;
+  }
+  return d + ' Z';
 }
 
 // 城は地図記号(城跡記号)のように、凹凸のある城壁(クレネレーション)のシルエットで表す
@@ -1140,21 +1184,17 @@ function renderMapLegend(elId, participants) {
   el.innerHTML = factions.map((f) => `<span class="map-legend-item"><span class="map-legend-dot" style="background:${factionColorOf(f)}"></span>${escapeHtml(f)}</span>`).join('');
 }
 
-function renderMapSvg(svg, shapes, participants, pm, interactive) {
+function renderMapSvg(svg, shapes, participants, pm) {
   svg.innerHTML = '';
   svg.appendChild(svgEl('rect', { x: 0, y: 0, width: 400, height: 300, fill: '#dfe8d8' }));
   shapes.forEach((shape, idx) => {
     if (shape.type === 'hill') {
       const elevation = shape.elevation || 2;
-      const pts = hillPoints(shape.x, shape.y, elevation).map((p) => p.join(',')).join(' ');
-      svg.appendChild(svgEl('polygon', { points: pts, fill: HILL_COLORS[elevation] || HILL_COLORS[2], stroke: '#5f6f45', 'stroke-width': 1.5, 'data-kind': 'shape', 'data-shape-idx': idx }));
+      const d = smoothClosedPathD(hillOutlinePoints(shape));
+      svg.appendChild(svgEl('path', { d, fill: HILL_COLORS[elevation] || HILL_COLORS[2], stroke: '#5f6f45', 'stroke-width': 1.5, 'stroke-linejoin': 'round', 'data-kind': 'shape', 'data-shape-idx': idx }));
     } else if (shape.type === 'river') {
-      const { x1, y1, x2, y2 } = riverEndpoints(shape);
-      svg.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: '#5b8bd0', 'stroke-width': 6, 'stroke-linecap': 'round', 'data-kind': 'shape', 'data-shape-idx': idx }));
-      if (interactive) { // 編集中だけ、両端に専用のつまみを置いて向き・長さを変えられるようにする
-        svg.appendChild(svgEl('circle', { cx: x1, cy: y1, r: 7, fill: '#2f5fad', stroke: '#fff', 'stroke-width': 1.5, 'data-kind': 'river-handle', 'data-shape-idx': idx, 'data-handle': '1' }));
-        svg.appendChild(svgEl('circle', { cx: x2, cy: y2, r: 7, fill: '#2f5fad', stroke: '#fff', 'stroke-width': 1.5, 'data-kind': 'river-handle', 'data-shape-idx': idx, 'data-handle': '2' }));
-      }
+      const d = smoothPathD(riverPointsOf(shape));
+      if (d) svg.appendChild(svgEl('path', { d, fill: 'none', stroke: '#5b8bd0', 'stroke-width': 6, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'data-kind': 'shape', 'data-shape-idx': idx }));
     } else if (shape.type === 'castle') {
       const g = svgEl('g', { 'data-kind': 'shape', 'data-shape-idx': idx });
       const pts = castlePoints(shape.x, shape.y).map((p) => p.join(',')).join(' ');
@@ -1191,15 +1231,15 @@ function svgPoint(svg, e) {
 
 function redrawMapEditor() {
   const svg = document.getElementById('map-svg');
-  renderMapSvg(svg, mapDraftShapes, mapDraftParticipants, peopleMapCache(), true);
+  renderMapSvg(svg, mapDraftShapes, mapDraftParticipants, peopleMapCache());
   renderMapLegend('map-legend', mapDraftParticipants);
 }
 
 function renderMapToolbar() {
   const bar = document.getElementById('map-toolbar');
   const tools = [
-    { id: 'hill', label: '⛰ 山を置く' },
-    { id: 'river', label: '🌊 川を置く' },
+    { id: 'hill', label: '⛰ 山を描く' },
+    { id: 'river', label: '🌊 川を描く' },
     { id: 'castle', label: '🏯 城を置く' },
     { id: 'edit', label: '✏️ 高さ・名前を変更' },
     { id: 'delete', label: '🗑 地形を削除' },
@@ -1209,9 +1249,7 @@ function renderMapToolbar() {
 
 function openMapEditor() {
   const ev = eventById(mapEditingEventId);
-  mapDraftShapes = JSON.parse(JSON.stringify((ev.terrainMap && ev.terrainMap.shapes) || []))
-    // 旧データの川({x,y}のみ)は、この画面を開いた時点で2点形式に変換する(向きを変えられるようにするため)
-    .map((s) => (s.type === 'river' && s.x1 == null) ? { type: 'river', ...riverEndpoints(s) } : s);
+  mapDraftShapes = JSON.parse(JSON.stringify((ev.terrainMap && ev.terrainMap.shapes) || []));
   mapDraftParticipants = JSON.parse(JSON.stringify(ev.participants || [])).map((p, i) => (
     p.position ? p : { ...p, position: { x: 30 + (i % 6) * 58, y: 230 + Math.floor(i / 6) * 40 } }
   ));
@@ -1224,9 +1262,11 @@ async function editMapShape(idx) {
   const shape = mapDraftShapes[idx];
   if (!shape) return;
   if (shape.type === 'hill') {
-    // タップするたびに標高(大きさ・色の濃さ)を1→2→3→1と切り替える
-    const i = HILL_ELEVATIONS.indexOf(shape.elevation || 2);
-    shape.elevation = HILL_ELEVATIONS[(i + 1) % HILL_ELEVATIONS.length];
+    // タップするたびに標高(大きさ・色の濃さ)を1→2→3→1と切り替える。なぞって描いた輪郭は重心基準で拡大縮小する
+    const oldElevation = shape.elevation || 2;
+    const newElevation = HILL_ELEVATIONS[(HILL_ELEVATIONS.indexOf(oldElevation) + 1) % HILL_ELEVATIONS.length];
+    if (shape.points) shape.points = scalePointsAroundCentroid(shape.points, HILL_SCALE_OF(newElevation) / HILL_SCALE_OF(oldElevation));
+    shape.elevation = newElevation;
     redrawMapEditor();
   } else if (shape.type === 'castle') {
     const name = await promptText('城の名前', shape.name || '城');
@@ -1236,6 +1276,7 @@ async function editMapShape(idx) {
   }
 }
 
+const DRAW_SAMPLE_DIST = 6; // なぞって描く時、前の点からこの距離(SVG座標)以上動いたら新しい点を追加する
 function initMapEditorEvents() {
   const svg = document.getElementById('map-svg');
   document.getElementById('map-toolbar').addEventListener('click', (e) => {
@@ -1256,22 +1297,19 @@ function initMapEditorEvents() {
     }
     if (g) {
       if (g.dataset.kind === 'shape') {
-        // 川は2点とも一緒に動かせるよう、始点からの移動量(dx, dy)を記録しておく
+        // 輪郭(points)を持つ山・川は、その点をすべて一緒にずらせるよう始点からの移動量(dx, dy)を記録しておく
         mapDragging = { kind: 'shape', idx: Number(g.dataset.shapeIdx), startPt: svgPoint(svg, e), orig: { ...mapDraftShapes[Number(g.dataset.shapeIdx)] } };
-      } else if (g.dataset.kind === 'river-handle') {
-        mapDragging = { kind: 'river-handle', idx: Number(g.dataset.shapeIdx), handle: g.dataset.handle };
       } else {
         mapDragging = { kind: 'marker', idx: Number(g.dataset.participantIdx) };
       }
       return;
     }
-    if (selectedMapTool === 'hill') {
+    if (selectedMapTool === 'hill' || selectedMapTool === 'river') {
+      // ペンで書くように、タップした点から始めてなぞった軌跡をそのまま輪郭(山)・線(川)にする
       const pt = svgPoint(svg, e);
-      mapDraftShapes.push({ type: 'hill', x: pt.x, y: pt.y, elevation: 2 });
-      redrawMapEditor();
-    } else if (selectedMapTool === 'river') {
-      const pt = svgPoint(svg, e);
-      mapDraftShapes.push({ type: 'river', x1: pt.x - 30, y1: pt.y, x2: pt.x + 30, y2: pt.y });
+      const newShape = selectedMapTool === 'hill' ? { type: 'hill', points: [pt], elevation: 2 } : { type: 'river', points: [pt] };
+      mapDraftShapes.push(newShape);
+      mapDragging = { kind: 'draw', shape: newShape, lastPt: pt };
       redrawMapEditor();
     } else if (selectedMapTool === 'castle') {
       const pt = svgPoint(svg, e);
@@ -1285,22 +1323,31 @@ function initMapEditorEvents() {
   svg.addEventListener('pointermove', (e) => {
     if (!mapDragging) return;
     const pt = svgPoint(svg, e);
-    if (mapDragging.kind === 'shape') {
+    if (mapDragging.kind === 'draw') {
+      const dx = pt.x - mapDragging.lastPt.x, dy = pt.y - mapDragging.lastPt.y;
+      if (Math.hypot(dx, dy) < DRAW_SAMPLE_DIST) return; // なぞり点を間引いて点数を抑える
+      mapDragging.shape.points.push(pt);
+      mapDragging.lastPt = pt;
+    } else if (mapDragging.kind === 'shape') {
       const shape = mapDraftShapes[mapDragging.idx];
       const orig = mapDragging.orig;
       const dx = pt.x - mapDragging.startPt.x;
       const dy = pt.y - mapDragging.startPt.y;
-      if (orig.type === 'river') { shape.x1 = orig.x1 + dx; shape.y1 = orig.y1 + dy; shape.x2 = orig.x2 + dx; shape.y2 = orig.y2 + dy; }
+      if (orig.points) shape.points = orig.points.map((o) => ({ x: o.x + dx, y: o.y + dy }));
       else { shape.x = orig.x + dx; shape.y = orig.y + dy; }
-    } else if (mapDragging.kind === 'river-handle') {
-      const shape = mapDraftShapes[mapDragging.idx];
-      if (mapDragging.handle === '1') { shape.x1 = pt.x; shape.y1 = pt.y; } else { shape.x2 = pt.x; shape.y2 = pt.y; }
     } else {
       mapDraftParticipants[mapDragging.idx].position = { x: pt.x, y: pt.y };
     }
     redrawMapEditor();
   });
-  window.addEventListener('pointerup', () => { mapDragging = null; });
+  window.addEventListener('pointerup', () => {
+    // なぞらずタップだけで終わった(点が1つしかない)場合は、何も描けていないので取り消す
+    if (mapDragging && mapDragging.kind === 'draw' && mapDragging.shape.points.length < 2) {
+      mapDraftShapes = mapDraftShapes.filter((s) => s !== mapDragging.shape);
+      redrawMapEditor();
+    }
+    mapDragging = null;
+  });
   document.getElementById('map-save-btn').addEventListener('click', async () => {
     const ev = eventById(mapEditingEventId);
     ev.terrainMap = { shapes: mapDraftShapes };
