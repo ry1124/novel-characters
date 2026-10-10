@@ -274,14 +274,21 @@
       </div>
       <button class="btn-secondary" id="person-skill-add-btn" type="button">+ 技を追加</button>
       <div class="section-label" style="padding-left:0;">家族(任意)</div>
-      <div class="form-row"><label>父</label><select id="person-form-father"></select></div>
-      <div class="form-row"><label>母</label><select id="person-form-mother"></select></div>
+      <div class="form-row"><label>父</label>
+        <input type="hidden" id="person-form-father" value="">
+        <button type="button" class="picker-btn is-placeholder" id="person-form-father-picker">(未設定)</button>
+      </div>
+      <div class="form-row"><label>母</label>
+        <input type="hidden" id="person-form-mother" value="">
+        <button type="button" class="picker-btn is-placeholder" id="person-form-mother-picker">(未設定)</button>
+      </div>
       <datalist id="affiliation-datalist"></datalist>
       <datalist id="role-datalist"></datalist>
       <div class="form-note">配偶者</div>
       <ul id="person-spouse-list" class="list" style="padding:0;"></ul>
       <div class="form-row">
-        <select id="person-spouse-add"></select>
+        <input type="hidden" id="person-spouse-add" value="">
+        <button type="button" class="picker-btn is-placeholder" id="person-spouse-add-picker">選択してください</button>
       </div>
       <button class="btn-secondary" id="person-spouse-add-btn" type="button">+ 配偶者に追加</button>
 
@@ -289,14 +296,16 @@
         <div class="form-note">子</div>
         <ul id="person-children-list" class="list" style="padding:0;"></ul>
         <div class="form-row">
-          <select id="person-child-add"></select>
+          <input type="hidden" id="person-child-add" value="">
+          <button type="button" class="picker-btn is-placeholder" id="person-child-add-picker">選択してください</button>
         </div>
         <button class="btn-secondary" id="person-child-add-btn" type="button">+ 子を追加</button>
 
         <div class="form-note">養子(血縁ではない子)</div>
         <ul id="person-adopted-children-list" class="list" style="padding:0;"></ul>
         <div class="form-row">
-          <select id="person-adopted-child-add"></select>
+          <input type="hidden" id="person-adopted-child-add" value="">
+          <button type="button" class="picker-btn is-placeholder" id="person-adopted-child-add-picker">選択してください</button>
         </div>
         <button class="btn-secondary" id="person-adopted-child-add-btn" type="button">+ 養子を追加</button>
       </div>
@@ -307,7 +316,8 @@
       <div class="form-row">
         <label>関係を追加</label>
         <div class="event-time-row">
-          <select id="person-relationship-add-person" style="flex:1;width:auto;"></select>
+          <input type="hidden" id="person-relationship-add-person" value="">
+          <button type="button" class="picker-btn is-placeholder" id="person-relationship-add-person-picker">選択してください</button>
           <input id="person-relationship-add-type" type="text" list="relationship-type-datalist" placeholder="関係(例: 師弟)">
         </div>
       </div>
@@ -391,10 +401,10 @@
       <ul id="event-form-participants" class="list" style="padding:0;"></ul>
       <div class="form-row">
         <label>参加者を追加</label>
-        <select id="event-form-add-person"></select>
+        <input type="hidden" id="event-form-add-person" value="">
+        <button type="button" class="picker-btn is-placeholder" id="event-form-add-person-picker">選択してください</button>
       </div>
       <button class="btn-secondary" id="event-form-add-btn" type="button">+ この人物を参加者に追加</button>
-      <button class="btn-secondary" id="event-form-new-person-btn" type="button">+ 新しい人物を作って参加させる</button>
     </div>
   </section>
 
@@ -516,6 +526,21 @@
       </div>
       <div class="sheet-list"><button class="sheet-btn" id="prompt-sheet-ok">OK</button></div>
       <div class="sheet-list"><button class="sheet-btn cancel" id="prompt-sheet-cancel">キャンセル</button></div>
+    </div>
+  </div>
+
+  <!-- ===== 人物選択シート(検索付き。プルダウンの代わりに人物を選ぶ時はすべてこれを使う) ===== -->
+  <div id="person-picker-sheet" class="sheet-overlay hidden">
+    <div class="sheet">
+      <div class="person-picker-search-wrap">
+        <input type="text" id="person-picker-search" placeholder="名前で検索" autocomplete="off">
+      </div>
+      <div class="sheet-list person-picker-list-wrap">
+        <button type="button" class="sheet-btn accent" id="person-picker-new">+ 新しい人物を作成...</button>
+        <button type="button" class="sheet-btn hidden" id="person-picker-clear">(未設定にする)</button>
+        <div id="person-picker-list"></div>
+      </div>
+      <div class="sheet-list"><button class="sheet-btn cancel" id="person-picker-cancel">キャンセル</button></div>
     </div>
   </div>
 

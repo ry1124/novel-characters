@@ -252,6 +252,24 @@ html, body {
   background: var(--surface2); color: var(--text); width: 100%; font-family: inherit;
 }
 
+/* プルダウン(<select>)の代わりに人物選択シートを開くボタン。見た目は.form-row selectと揃える */
+.picker-btn {
+  font-size: 16px; padding: 10px 12px; border: 0; border-radius: 10px;
+  background: var(--surface2); color: var(--text); width: 100%; font-family: inherit;
+  text-align: left; cursor: pointer;
+}
+.picker-btn.is-placeholder { color: var(--text-dim); }
+.event-time-row .picker-btn { flex: 1; min-width: 0; width: auto; }
+
+.person-picker-search-wrap { padding: 4px 8px 8px; }
+.person-picker-search-wrap input {
+  font-size: 16px; padding: 10px 12px; border: 0; border-radius: 10px;
+  background: var(--surface2); color: var(--text); width: 100%; font-family: inherit;
+}
+.person-picker-list-wrap { max-height: 46vh; }
+.sheet-btn.accent { color: var(--accent); font-weight: 600; }
+.person-picker-empty { padding: 15px; text-align: center; font-size: 14px; color: var(--text-dim); }
+
 /* ===== 地形配置エディタ ===== */
 .map-toolbar { display: flex; gap: 8px; padding: 8px 16px; flex-wrap: wrap; }
 .map-tool-btn { padding: 8px 14px; border-radius: 10px; background: var(--surface2); color: var(--text); border: none; font-size: 13px; cursor: pointer; }
