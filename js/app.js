@@ -1170,7 +1170,8 @@ async function savePersonForm() {
       role: r.role.trim(),
       startYear: r.startYear != null && r.startYear !== '' ? clampYear(r.startYear) : null,
       endYear: r.endYear != null && r.endYear !== '' ? clampYear(r.endYear) : null,
-    }));
+    }))
+    .sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   const affiliations = affiliationDraftRows
     .filter((a) => (a.affiliation || '').trim())
     .map((a) => ({
