@@ -725,6 +725,13 @@ function renderPeople() {
       const diff = (isPersonDead(a) ? 1 : 0) - (isPersonDead(b) ? 1 : 0);
       return diff !== 0 ? diff : kanaCompare(a, b);
     }
+    if (peopleSortMode === 'faction') {
+      // 陣営未設定の人物は最後にまとめる(あいうえお順の比較だと空文字が先頭に来てしまうため)
+      const fa = currentFactionOf(a) || '', fb = currentFactionOf(b) || '';
+      if (!fa && fb) return 1;
+      if (fa && !fb) return -1;
+      return fa.localeCompare(fb, 'ja') || kanaCompare(a, b);
+    }
     return kanaCompare(a, b);
   });
   if (peopleSortMode === 'name') {
@@ -741,6 +748,15 @@ function renderPeople() {
     let lastGroup = null;
     listEl.innerHTML = sorted.map((p) => {
       const group = isPersonDead(p) ? '死亡済' : '存命';
+      const header = group !== lastGroup ? `<li class="section-header-row">${escapeHtml(group)}</li>` : '';
+      lastGroup = group;
+      return header + personListItemHtml(p);
+    }).join('');
+  } else if (peopleSortMode === 'faction') {
+    // 陣営別の時は、人物の現時点(最後に所属した)陣営ごとに見出しで分ける。未設定はまとめて最後に出す
+    let lastGroup = null;
+    listEl.innerHTML = sorted.map((p) => {
+      const group = currentFactionOf(p) || '(陣営未設定)';
       const header = group !== lastGroup ? `<li class="section-header-row">${escapeHtml(group)}</li>` : '';
       lastGroup = group;
       return header + personListItemHtml(p);
