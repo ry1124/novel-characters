@@ -28,6 +28,7 @@ const DIRTY_TRACKED_VIEWS = ['view-edit-person', 'view-edit-event'];
 
 const STATUS_LIST = ['生存', '死亡', '負傷', '不明'];
 const STATUS_CLASS = { 生存: 'alive', 死亡: 'dead', 負傷: 'injured', 不明: 'unknown' };
+const ROLE_CATEGORIES = ['軍部', '国', '家']; // 役職の分類(固定の3種、未設定もありえる)
 
 // 討ち取った相手・負傷させた相手は複数人対応(killedPersonIds/injuredPersonIds)。
 // 旧バージョン(1人のみ、killedPersonId/injuredPersonId)で保存済みのデータも読めるようにフォールバックする
@@ -65,6 +66,16 @@ function formatFactionHistory(p) {
 function currentFactionOf(p) {
   const list = (p.factions || []).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   return list.length ? list[list.length - 1].faction : '';
+}
+
+// 同じ資格名を複数回取得している場合(初段→二段のような昇格の記録等)は、最後に取得した1件だけを残す
+function latestQualificationsOf(p) {
+  const byName = new Map();
+  (p.qualifications || []).forEach((q) => {
+    const prev = byName.get(q.qualification);
+    if (!prev || (q.startYear ?? -Infinity) >= (prev.startYear ?? -Infinity)) byName.set(q.qualification, q);
+  });
+  return [...byName.values()];
 }
 
 // 生年が分かっている人物だけ、指定した年の時点での年齢(満年齢、月は考慮しない簡易計算)を返す
@@ -175,12 +186,17 @@ function formatRolePeriod(row) {
   return `${row.startYear ?? '?'}年〜${row.endYear != null ? row.endYear + '年' : ''}`;
 }
 
+function roleCategoryOptionsHtml(selected) {
+  return '<option value="">分類-</option>' + ROLE_CATEGORIES.map((c) => `<option value="${c}" ${selected === c ? 'selected' : ''}>${c}</option>`).join('');
+}
+
 function renderRoleList() {
   const listEl = document.getElementById('person-role-list');
   listEl.innerHTML = roleDraftRows.map((row) => `<li class="participant-row summary-row" data-row-id="${row.rowId}">
       <input class="pr-start" type="number" min="0" max="3000" value="${row.startYear ?? ''}" placeholder="開始">
       <input class="pr-end" type="number" min="0" max="3000" value="${row.endYear ?? ''}" placeholder="終了">
       <input class="pr-name" type="text" value="${escapeHtml(row.role || '')}" placeholder="役職名">
+      <select class="pr-category">${roleCategoryOptionsHtml(row.category)}</select>
       <button type="button" class="remove-btn" data-remove-role="${row.rowId}">×</button>
     </li>`).join('');
 }
@@ -469,7 +485,7 @@ function openPersonForm(id) {
     birthEl.value = p.birthYear ?? '';
     deathEl.value = p.deathYear ?? '';
     summaryDraftRows = loadSummaryRowsForPerson(id);
-    roleDraftRows = (p.roles || []).map((r) => ({ rowId: nextRoleRowId(), role: r.role, startYear: r.startYear, endYear: r.endYear }));
+    roleDraftRows = (p.roles || []).map((r) => ({ rowId: nextRoleRowId(), role: r.role, category: r.category || '', startYear: r.startYear, endYear: r.endYear }));
     affiliationDraftRows = (p.affiliations || []).map((a) => ({ rowId: nextAffiliationRowId(), affiliation: a.affiliation, startYear: a.startYear, endYear: a.endYear }));
     qualificationDraftRows = (p.qualifications || []).map((q) => ({ rowId: nextQualificationRowId(), qualification: q.qualification, startYear: q.startYear, endYear: q.endYear }));
     medalDraftRows = (p.medals || []).map((m) => ({ rowId: nextMedalRowId(), medal: m.medal, rank: m.rank, startYear: m.startYear }));
@@ -506,6 +522,7 @@ function openPersonForm(id) {
   document.getElementById('person-role-add-start').value = '';
   document.getElementById('person-role-add-end').value = '';
   document.getElementById('person-role-add-name').value = '';
+  document.getElementById('person-role-add-category').value = '';
   document.getElementById('person-affiliation-add-start').value = '';
   document.getElementById('person-affiliation-add-end').value = '';
   document.getElementById('person-affiliation-add-name').value = '';
@@ -779,15 +796,17 @@ function renderPersonDetail() {
   document.getElementById('person-genpuku').textContent = p.genpukuYear != null ? `元服: ${formatYearMonth(p.genpukuYear, p.genpukuMonth)}` : '';
   const rolesSorted = (p.roles || []).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   document.getElementById('person-roles-timeline').innerHTML = rolesSorted.map((r) => `<li class="timeline-item">
-      <div class="timeline-year">${formatRolePeriod(r)}</div>
-      <div class="timeline-body"><div class="timeline-title">${escapeHtml(r.role)}</div></div>
+      <div class="timeline-year"${r.startYear != null ? ` data-year="${r.startYear}"` : ''}>${formatRolePeriod(r)}</div>
+      <div class="timeline-body"><div class="timeline-title">${escapeHtml(r.role)}${r.category ? ` <span class="badge">${escapeHtml(r.category)}</span>` : ''}</div></div>
     </li>`).join('');
   document.getElementById('person-relationships').innerHTML = (p.relationships || []).map((r) => {
     const rp = personById(r.personId);
     return `<span class="chip-link" data-person-id="${r.personId}">${escapeHtml(r.type)}: ${escapeHtml(rp ? rp.name : '?')}</span>`;
   }).join('');
   document.getElementById('person-affiliations').textContent = (p.affiliations || []).map((a) => `${a.affiliation}(${formatRolePeriod(a)})`).join('、');
-  document.getElementById('person-qualifications').textContent = (p.qualifications || []).map((q) => `${q.qualification}(${formatRolePeriod(q)})`).join('、');
+  document.getElementById('person-qualifications').textContent = latestQualificationsOf(p)
+    .sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0))
+    .map((q) => `${q.qualification}(${formatRolePeriod(q)})`).join('、');
   document.getElementById('person-medals').textContent = (p.medals || []).map((m) => {
     const parts = [m.rank, m.startYear != null ? `${m.startYear}年` : null].filter(Boolean);
     return parts.length ? `${m.medal}(${parts.join('・')})` : m.medal;
@@ -828,7 +847,7 @@ function renderPersonDetail() {
       const isDead = part.status === '死亡';
       const age = personAgeAt(p, ev.year);
       return `<li class="timeline-item ${isDead ? 'is-dead' : ''}" data-event-id="${ev.id}">
-        <div class="timeline-year">${formatEventTime(ev)}${age !== null ? `(${age}歳)` : ''}</div>
+        <div class="timeline-year" data-year="${ev.year}">${formatEventTime(ev)}${age !== null ? `(${age}歳)` : ''}</div>
         <div class="timeline-body">
           <div class="timeline-title">${escapeHtml(ev.title)} <span class="status-pill ${STATUS_CLASS[part.status] || 'unknown'}">${part.status || '不明'}</span></div>
           <div class="timeline-desc">${escapeHtml(part.note || ev.description || '')}</div>
@@ -936,11 +955,13 @@ function renderEventDetail() {
 }
 
 // ===== 役職一覧(人物を横断して、役職名ごとにグループ表示) =====
+let rolesCategoryFilter = ''; // '' | '軍部' | '国' | '家'
 function renderRoles() {
   const q = (document.getElementById('roles-search-input').value || '').trim().toLowerCase();
   const groups = new Map();
   people.forEach((p) => (p.roles || []).forEach((r) => {
     if (!r.role) return;
+    if (rolesCategoryFilter && (r.category || '') !== rolesCategoryFilter) return;
     if (!groups.has(r.role)) groups.set(r.role, []);
     groups.get(r.role).push({ person: p, startYear: r.startYear, endYear: r.endYear });
   }));
@@ -974,6 +995,7 @@ function renderRoles() {
 let bulkRoleCheckedIds = new Set();
 function openBulkRoleForm() {
   document.getElementById('bulk-role-name').value = '';
+  document.getElementById('bulk-role-category').value = '';
   document.getElementById('bulk-role-start').value = '';
   document.getElementById('bulk-role-end').value = '';
   document.getElementById('bulk-role-person-search').value = '';
@@ -1499,6 +1521,7 @@ async function savePersonForm() {
     .filter((r) => (r.role || '').trim())
     .map((r) => ({
       role: r.role.trim(),
+      category: r.category || '',
       startYear: r.startYear != null && r.startYear !== '' ? clampYear(r.startYear) : null,
       endYear: r.endYear != null && r.endYear !== '' ? clampYear(r.endYear) : null,
     }))
@@ -2196,8 +2219,11 @@ function renderPersonYearSelect(p) {
   document.getElementById('person-year-result').innerHTML = '';
 }
 
-function openPersonYearView(id) {
+let personYearPreset = null;
+// yearを渡すと、年の選択をスキップしてその年のデータを直接開く(経歴年表・役職年表の年をタップした時用)
+function openPersonYearView(id, year) {
   personYearFocusId = id;
+  personYearPreset = year != null ? year : null;
   navigateTo('view-person-year');
 }
 
@@ -2206,6 +2232,11 @@ function renderPersonYearView() {
   if (!p) { goBack(); return; }
   document.getElementById('person-year-view-title').textContent = `${p.name}の年代`;
   renderPersonYearSelect(p);
+  if (personYearPreset != null) {
+    document.getElementById('person-year-select').value = String(personYearPreset);
+    renderPersonYearResult(p, personYearPreset);
+    personYearPreset = null;
+  }
 }
 
 function renderPersonYearResult(p, yearVal) {
@@ -2342,6 +2373,14 @@ function wireLists() {
     renderEvents();
   }));
 
+  document.querySelectorAll('#view-roles .filter-chips').forEach((bar) => bar.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-category]');
+    if (!chip) return;
+    rolesCategoryFilter = chip.dataset.category;
+    bar.querySelectorAll('.filter-chip').forEach((c) => c.classList.toggle('active', c === chip));
+    renderRoles();
+  }));
+
   const delegate = (id, selector, fn) => document.getElementById(id).addEventListener('click', (e) => {
     const el = e.target.closest(selector);
     if (el) fn(el);
@@ -2352,7 +2391,17 @@ function wireLists() {
   delegate('event-participants', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
   delegate('events-list', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
   delegate('event-children-list', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
-  delegate('person-timeline', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
+  // 経歴年表は、年の部分をタップした時だけ「年代で見る」を開く(それ以外=出来事名部分は出来事詳細を開く)
+  document.getElementById('person-timeline').addEventListener('click', (e) => {
+    const yearEl = e.target.closest('[data-year]');
+    if (yearEl) { openPersonYearView(currentPersonId, Number(yearEl.dataset.year)); return; }
+    const li = e.target.closest('[data-event-id]');
+    if (li) openEventDetail(Number(li.dataset.eventId));
+  });
+  document.getElementById('person-roles-timeline').addEventListener('click', (e) => {
+    const yearEl = e.target.closest('[data-year]');
+    if (yearEl) openPersonYearView(currentPersonId, Number(yearEl.dataset.year));
+  });
   delegate('year-lookup-events', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
   delegate('year-lookup-people', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
   delegate('roles-list', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
@@ -2373,6 +2422,7 @@ function wireLists() {
     const role = document.getElementById('bulk-role-name').value.trim();
     if (!role) { alert('役職名を入力してください'); return; }
     if (!bulkRoleCheckedIds.size) { alert('対象の人物を選んでください'); return; }
+    const category = document.getElementById('bulk-role-category').value;
     const startVal = document.getElementById('bulk-role-start').value;
     const endVal = document.getElementById('bulk-role-end').value;
     const startYear = startVal ? clampYear(startVal) : null;
@@ -2380,7 +2430,7 @@ function wireLists() {
     for (const pid of bulkRoleCheckedIds) {
       const p = personById(pid);
       if (!p) continue;
-      p.roles = [...(p.roles || []), { role, startYear, endYear }];
+      p.roles = [...(p.roles || []), { role, category, startYear, endYear }];
       await DB.updatePerson(p);
     }
     await refreshAll();
@@ -2654,14 +2704,15 @@ function wireForms() {
     const startEl = document.getElementById('person-role-add-start');
     const endEl = document.getElementById('person-role-add-end');
     const nameEl = document.getElementById('person-role-add-name');
+    const categoryEl = document.getElementById('person-role-add-category');
     const role = nameEl.value.trim();
     if (!role) return;
     roleDraftRows.push({
-      rowId: nextRoleRowId(), role,
+      rowId: nextRoleRowId(), role, category: categoryEl.value,
       startYear: startEl.value ? clampYear(startEl.value) : null,
       endYear: endEl.value ? clampYear(endEl.value) : null,
     });
-    startEl.value = ''; endEl.value = ''; nameEl.value = '';
+    startEl.value = ''; endEl.value = ''; nameEl.value = ''; categoryEl.value = '';
     renderRoleList();
   });
 
@@ -2674,6 +2725,13 @@ function wireForms() {
     if (e.target.classList.contains('pr-start')) draft.startYear = e.target.value ? clampYear(e.target.value) : null;
     else if (e.target.classList.contains('pr-end')) draft.endYear = e.target.value ? clampYear(e.target.value) : null;
     else if (e.target.classList.contains('pr-name')) draft.role = e.target.value;
+  });
+  roleList.addEventListener('change', (e) => {
+    const row = e.target.closest('.summary-row');
+    if (!row) return;
+    const draft = roleDraftRows.find((r) => r.rowId === row.dataset.rowId);
+    if (!draft) return;
+    if (e.target.classList.contains('pr-category')) draft.category = e.target.value;
   });
   roleList.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-remove-role]');

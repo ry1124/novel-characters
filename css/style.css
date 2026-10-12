@@ -152,6 +152,7 @@ html, body {
 .timeline-item::before { content: ""; position: absolute; left: -7px; top: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
 .timeline-item.is-dead::before { background: var(--danger); }
 .timeline-year { font-size: 12px; color: var(--text-dim); white-space: nowrap; min-width: 54px; }
+.timeline-year[data-year] { color: var(--accent); text-decoration: underline dotted; cursor: pointer; }
 .timeline-body { flex: 1; min-width: 0; }
 .timeline-title { font-weight: 600; font-size: 15px; }
 .timeline-desc { font-size: 13px; color: var(--text-dim); margin-top: 2px; }

@@ -233,6 +233,12 @@
           <input id="person-role-add-start" type="number" min="0" max="3000" placeholder="開始年">
           <input id="person-role-add-end" type="number" min="0" max="3000" placeholder="終了年(任意)">
           <input id="person-role-add-name" type="text" placeholder="役職名(例: 右大臣)">
+          <select id="person-role-add-category">
+            <option value="">分類-</option>
+            <option value="軍部">軍部</option>
+            <option value="国">国</option>
+            <option value="家">家</option>
+          </select>
         </div>
       </div>
       <button class="btn-secondary" id="person-role-add-btn" type="button">+ 役職を追加</button>
@@ -451,6 +457,12 @@
       <div class="topbar-actions"><button class="icon-btn" data-nav="view-bulk-role">一括追加</button></div>
     </div>
     <div class="search-bar"><input id="roles-search-input" type="text" placeholder="役職名で検索"></div>
+    <div class="filter-chips">
+      <button class="filter-chip active" data-category="">すべて</button>
+      <button class="filter-chip" data-category="軍部">軍部</button>
+      <button class="filter-chip" data-category="国">国</button>
+      <button class="filter-chip" data-category="家">家</button>
+    </div>
     <ul id="roles-list" class="list"></ul>
     <div id="roles-empty" class="empty-state">まだ役職が登録されていません</div>
   </section>
@@ -464,6 +476,15 @@
     </div>
     <div class="form-body">
       <div class="form-row"><label>役職名</label><input id="bulk-role-name" type="text" list="role-datalist" placeholder="例: 大老"></div>
+      <div class="form-row">
+        <label>分類</label>
+        <select id="bulk-role-category">
+          <option value="">分類-</option>
+          <option value="軍部">軍部</option>
+          <option value="国">国</option>
+          <option value="家">家</option>
+        </select>
+      </div>
       <div class="form-row">
         <label>期間</label>
         <div class="event-time-row">
