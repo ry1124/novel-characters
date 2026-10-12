@@ -846,11 +846,15 @@ function renderPersonDetail() {
       const part = (ev.participants || []).find((pt) => pt.personId === p.id) || {};
       const isDead = part.status === '死亡';
       const age = personAgeAt(p, ev.year);
+      // この出来事の他の参加者から見て、この人物が「討ち取った相手」に指定されていれば、誰にやられたかを表示する
+      const killedByNames = (ev.participants || []).filter((other) => killedIdsOf(other).includes(p.id))
+        .map((other) => personById(other.personId)).filter(Boolean).map((o) => o.name);
+      const desc = [killedByNames.length ? `${killedByNames.join('・')}に討ち取られた` : '', part.note || ev.description || ''].filter(Boolean).join(' ・ ');
       return `<li class="timeline-item ${isDead ? 'is-dead' : ''}" data-event-id="${ev.id}">
         <div class="timeline-year" data-year="${ev.year}">${formatEventTime(ev)}${age !== null ? `(${age}歳)` : ''}</div>
         <div class="timeline-body">
           <div class="timeline-title">${escapeHtml(ev.title)} <span class="status-pill ${STATUS_CLASS[part.status] || 'unknown'}">${part.status || '不明'}</span></div>
-          <div class="timeline-desc">${escapeHtml(part.note || ev.description || '')}</div>
+          <div class="timeline-desc">${escapeHtml(desc)}</div>
         </div>
       </li>`;
     }).join('');
@@ -909,7 +913,19 @@ function renderEventDetail() {
     const age = person ? personAgeAt(person, ev.year) : null;
     const killedNames = killedIdsOf(p).map((id) => pm.get(id)).filter(Boolean).map((o) => o.name);
     const injuredNames = injuredIdsOf(p).map((id) => pm.get(id)).filter(Boolean).map((o) => o.name);
-    const subParts = [age !== null ? `${age}歳` : '', killedNames.length ? `${killedNames.join('・')}を討ち取った` : '', injuredNames.length ? `${injuredNames.join('・')}を負傷させた` : '', p.note || ''].filter(Boolean);
+    // 他の参加者の「討ち取った/負傷させた相手」にこの人物が指定されていれば、逆方向(誰にやられたか)も表示する
+    const killedByNames = participants.filter((other) => killedIdsOf(other).includes(p.personId))
+      .map((other) => pm.get(other.personId)).filter(Boolean).map((o) => o.name);
+    const injuredByNames = participants.filter((other) => injuredIdsOf(other).includes(p.personId))
+      .map((other) => pm.get(other.personId)).filter(Boolean).map((o) => o.name);
+    const subParts = [
+      age !== null ? `${age}歳` : '',
+      killedNames.length ? `${killedNames.join('・')}を討ち取った` : '',
+      injuredNames.length ? `${injuredNames.join('・')}を負傷させた` : '',
+      killedByNames.length ? `${killedByNames.join('・')}に討ち取られた` : '',
+      injuredByNames.length ? `${injuredByNames.join('・')}に負傷させられた` : '',
+      p.note || '',
+    ].filter(Boolean);
     return `<li class="list-item" data-person-id="${p.personId}">
       <div class="list-item-main">
         <div class="list-item-title">${escapeHtml(person ? person.name : '(不明な人物)')}</div>
