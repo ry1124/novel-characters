@@ -29,6 +29,8 @@ const DIRTY_TRACKED_VIEWS = ['view-edit-person', 'view-edit-event'];
 const STATUS_LIST = ['生存', '死亡', '負傷', '不明'];
 const STATUS_CLASS = { 生存: 'alive', 死亡: 'dead', 負傷: 'injured', 不明: 'unknown' };
 const ROLE_CATEGORIES = ['軍部', '国', '家']; // 役職の分類(固定の3種、未設定もありえる)
+const STRENGTH_TIERS = ['S', 'A', 'B', 'C']; // 強さのティア(強い順)
+const STRENGTH_TIER_RANK = { S: 4, A: 3, B: 2, C: 1 }; // ソート用の数値(大きいほど強い)
 
 // 討ち取った相手・負傷させた相手は複数人対応(killedPersonIds/injuredPersonIds)。
 // 旧バージョン(1人のみ、killedPersonId/injuredPersonId)で保存済みのデータも読めるようにフォールバックする
@@ -76,6 +78,34 @@ function formatFactionHistory(p) {
 function currentFactionOf(p) {
   const list = (p.factions || []).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   return list.length ? list[list.length - 1].faction : '';
+}
+
+// 強さ(ティア+点数)の推移を「A 80(1590年) → S 95(1600年)」のように矢印で繋げて表示する(年代の昇順)
+function formatStrengthHistory(p) {
+  const list = (p.strength || []).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+  return list.map((s) => {
+    const label = s.score != null && s.score !== '' ? `${s.tier} ${s.score}` : s.tier;
+    return s.startYear != null ? `${label}(${s.startYear}年)` : label;
+  }).join(' → ');
+}
+
+// ソート比較用の数値(ティアを優先し、同ティア内は点数で比較。未設定(null)は常に最下位)
+function strengthRankValue(entry) {
+  if (!entry || !entry.tier) return -Infinity;
+  return (STRENGTH_TIER_RANK[entry.tier] || 0) * 1000 + (Number(entry.score) || 0);
+}
+
+// 現時点(一番新しく登録した)強さ
+function currentStrengthOf(p) {
+  const list = (p.strength || []).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+  return list.length ? list[list.length - 1] : null;
+}
+
+// これまでで一番強かった時点(最高ティア・同ティアなら最高点)
+function maxStrengthOf(p) {
+  const list = p.strength || [];
+  if (!list.length) return null;
+  return list.reduce((best, cur) => (strengthRankValue(cur) > strengthRankValue(best) ? cur : best), list[0]);
 }
 
 // 同じ資格名を複数回取得している場合(初段→二段のような昇格の記録等)は、最後に取得した1件だけを残す
@@ -265,6 +295,25 @@ function renderFactionList() {
       <input class="pfc-start" type="number" min="0" max="3000" value="${row.startYear ?? ''}" placeholder="所属年">
       <input class="pfc-name" type="text" value="${escapeHtml(row.faction || '')}" placeholder="陣営名" list="person-faction-datalist">
       <button type="button" class="remove-btn" data-remove-faction="${row.rowId}">×</button>
+    </li>`).join('');
+}
+
+// ===== 人物フォーム: 強さ(複数、年代順。ティア+点数で成長を記録) =====
+let strengthDraftRows = [];
+let strengthRowSeq = 0;
+function nextStrengthRowId() { return 'strength' + (strengthRowSeq++); }
+
+function strengthTierOptionsHtml(selected) {
+  return STRENGTH_TIERS.map((t) => `<option value="${t}" ${selected === t ? 'selected' : ''}>${t}</option>`).join('');
+}
+
+function renderStrengthList() {
+  const listEl = document.getElementById('person-strength-list');
+  listEl.innerHTML = strengthDraftRows.map((row) => `<li class="participant-row summary-row" data-row-id="${row.rowId}">
+      <input class="pst-start" type="number" min="0" max="3000" value="${row.startYear ?? ''}" placeholder="年">
+      <select class="pst-tier">${strengthTierOptionsHtml(row.tier)}</select>
+      <input class="pst-score" type="number" value="${row.score ?? ''}" placeholder="点数(任意)">
+      <button type="button" class="remove-btn" data-remove-strength="${row.rowId}">×</button>
     </li>`).join('');
 }
 
@@ -501,6 +550,7 @@ function openPersonForm(id) {
     // 旧データ(単一のp.faction)しかない場合はそれを1件目として引き継ぐ
     factionDraftRows = (p.factions || (p.faction ? [{ faction: p.faction, startYear: null }] : []))
       .map((f) => ({ rowId: nextFactionRowId(), faction: f.faction, startYear: f.startYear }));
+    strengthDraftRows = (p.strength || []).map((s) => ({ rowId: nextStrengthRowId(), tier: s.tier || 'C', score: s.score ?? '', startYear: s.startYear }));
     genpukuYearEl.value = p.genpukuYear ?? '';
     genpukuMonthEl.value = p.genpukuMonth ?? '';
     episodeEl.value = p.episode || '';
@@ -527,6 +577,7 @@ function openPersonForm(id) {
     qualificationDraftRows = [];
     medalDraftRows = [];
     factionDraftRows = [];
+    strengthDraftRows = [];
     abilityDraftRows = [];
     weaponDraftRows = [];
     skillDraftRows = [];
@@ -556,6 +607,9 @@ function openPersonForm(id) {
   document.getElementById('person-medal-add-rank').value = '';
   document.getElementById('person-faction-add-start').value = '';
   document.getElementById('person-faction-add-name').value = '';
+  document.getElementById('person-strength-add-start').value = '';
+  document.getElementById('person-strength-add-tier').value = 'C';
+  document.getElementById('person-strength-add-score').value = '';
   document.getElementById('person-skill-add-name').value = '';
   document.getElementById('person-skill-add-description').value = '';
   renderSummaryList();
@@ -564,6 +618,7 @@ function openPersonForm(id) {
   renderQualificationList();
   renderMedalList();
   renderFactionList();
+  renderStrengthList();
   renderAbilityList();
   renderWeaponList();
   renderSkillList();
@@ -771,6 +826,12 @@ function renderPeople() {
       if (fa && !fb) return -1;
       return fa.localeCompare(fb, 'ja') || kanaCompare(a, b);
     }
+    if (peopleSortMode === 'strength-latest' || peopleSortMode === 'strength-max') {
+      // 最新=一番新しく登録した強さ、最大=これまでで一番強かった時点。どちらも強い順(降順)、同値はあいうえお順
+      const getEntry = peopleSortMode === 'strength-latest' ? currentStrengthOf : maxStrengthOf;
+      const diff = strengthRankValue(getEntry(b)) - strengthRankValue(getEntry(a));
+      return diff !== 0 ? diff : kanaCompare(a, b);
+    }
     return kanaCompare(a, b);
   });
   if (peopleSortMode === 'name') {
@@ -800,6 +861,17 @@ function renderPeople() {
       lastGroup = group;
       return header + personListItemHtml(p);
     }).join('');
+  } else if (peopleSortMode === 'strength-latest' || peopleSortMode === 'strength-max') {
+    // 強さ順の時は、対象の時点(最新/最大)のティアごとに見出しで分ける。未設定はまとめて最後に出す
+    const getEntry = peopleSortMode === 'strength-latest' ? currentStrengthOf : maxStrengthOf;
+    let lastGroup = null;
+    listEl.innerHTML = sorted.map((p) => {
+      const entry = getEntry(p);
+      const group = entry ? entry.tier : '(強さ未設定)';
+      const header = group !== lastGroup ? `<li class="section-header-row">${escapeHtml(group)}</li>` : '';
+      lastGroup = group;
+      return header + personListItemHtml(p);
+    }).join('');
   } else {
     listEl.innerHTML = sorted.map((p) => personListItemHtml(p)).join('');
   }
@@ -815,6 +887,7 @@ function renderPersonDetail() {
   document.getElementById('person-youmei').textContent = p.youmei ? `幼名: ${p.youmei}` : '';
   document.getElementById('person-maiden-name').textContent = p.maidenName ? `旧姓: ${p.maidenName}` : '';
   document.getElementById('person-faction').textContent = (p.factions || []).length ? `陣営: ${formatFactionHistory(p)}` : '';
+  document.getElementById('person-strength').textContent = (p.strength || []).length ? `強さ: ${formatStrengthHistory(p)}` : '';
   document.getElementById('person-genpuku').textContent = p.genpukuYear != null ? `元服: ${formatYearMonth(p.genpukuYear, p.genpukuMonth)}` : '';
   const rolesSorted = (p.roles || []).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   document.getElementById('person-roles-timeline').innerHTML = rolesSorted.map((r) => `<li class="timeline-item">
@@ -1599,6 +1672,15 @@ async function savePersonForm() {
       startYear: f.startYear != null && f.startYear !== '' ? clampYear(f.startYear) : null,
     }))
     .sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+  // 強さも陣営と同じく、成長の推移を矢印で表せるよう年代の昇順に並べ替えてから保存する
+  const strength = strengthDraftRows
+    .filter((s) => s.tier)
+    .map((s) => ({
+      tier: s.tier,
+      score: s.score != null && s.score !== '' ? Number(s.score) : null,
+      startYear: s.startYear != null && s.startYear !== '' ? clampYear(s.startYear) : null,
+    }))
+    .sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   const abilities = abilityDraftRows
     .filter((a) => (a.ability || '').trim())
     .map((a) => ({ ability: a.ability.trim() }));
@@ -1623,13 +1705,14 @@ async function savePersonForm() {
     oldSpouseIds = p.spouseIds || [];
     p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.episode = episode; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
     p.roles = roles; p.affiliations = affiliations; p.qualifications = qualifications; p.medals = medals; p.factions = factions;
+    p.strength = strength;
     p.abilities = abilities; p.weapons = weapons; p.skills = skills; p.relationships = relationships;
     p.birthYear = birthYear; p.deathYear = deathYear;
     p.fatherId = fatherId; p.motherId = motherId; p.spouseIds = spouseIds;
     await DB.updatePerson(p);
   } else {
     personId = await DB.addPerson({
-      name, kana, youmei, maidenName, episode, genpukuYear, genpukuMonth, roles, affiliations, qualifications, medals, factions,
+      name, kana, youmei, maidenName, episode, genpukuYear, genpukuMonth, roles, affiliations, qualifications, medals, factions, strength,
       abilities, weapons, skills, relationships, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now(),
     });
     currentPersonId = personId;
@@ -2896,6 +2979,40 @@ function wireForms() {
     if (!btn) return;
     factionDraftRows = factionDraftRows.filter((f) => f.rowId !== btn.dataset.removeFaction);
     renderFactionList();
+  });
+
+  document.getElementById('person-strength-add-btn').addEventListener('click', () => {
+    const startEl = document.getElementById('person-strength-add-start');
+    const tierEl = document.getElementById('person-strength-add-tier');
+    const scoreEl = document.getElementById('person-strength-add-score');
+    strengthDraftRows.push({
+      rowId: nextStrengthRowId(), tier: tierEl.value, score: scoreEl.value,
+      startYear: startEl.value ? clampYear(startEl.value) : null,
+    });
+    startEl.value = ''; scoreEl.value = '';
+    renderStrengthList();
+  });
+  const strengthList = document.getElementById('person-strength-list');
+  strengthList.addEventListener('input', (e) => {
+    const row = e.target.closest('.summary-row');
+    if (!row) return;
+    const draft = strengthDraftRows.find((s) => s.rowId === row.dataset.rowId);
+    if (!draft) return;
+    if (e.target.classList.contains('pst-start')) draft.startYear = e.target.value ? clampYear(e.target.value) : null;
+    else if (e.target.classList.contains('pst-score')) draft.score = e.target.value;
+  });
+  strengthList.addEventListener('change', (e) => {
+    const row = e.target.closest('.summary-row');
+    if (!row) return;
+    const draft = strengthDraftRows.find((s) => s.rowId === row.dataset.rowId);
+    if (!draft) return;
+    if (e.target.classList.contains('pst-tier')) draft.tier = e.target.value;
+  });
+  strengthList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-strength]');
+    if (!btn) return;
+    strengthDraftRows = strengthDraftRows.filter((s) => s.rowId !== btn.dataset.removeStrength);
+    renderStrengthList();
   });
 
   document.getElementById('person-ability-add-btn').addEventListener('click', () => {

@@ -35,6 +35,8 @@
       <button class="filter-chip" data-sort="birth">生年順</button>
       <button class="filter-chip" data-sort="status">生死</button>
       <button class="filter-chip" data-sort="faction">陣営別</button>
+      <button class="filter-chip" data-sort="strength-latest">強さ(最新)</button>
+      <button class="filter-chip" data-sort="strength-max">強さ(最大)</button>
     </div>
     <ul id="people-list" class="list"></ul>
     <div id="people-empty" class="empty-state">まだ人物が登録されていません</div>
@@ -57,6 +59,7 @@
       <div class="detail-sub" id="person-youmei"></div>
       <div class="detail-sub" id="person-maiden-name"></div>
       <div class="detail-sub" id="person-faction"></div>
+      <div class="detail-sub" id="person-strength"></div>
       <div class="detail-sub" id="person-genpuku"></div>
       <div class="detail-sub" id="person-affiliations"></div>
       <div class="detail-sub" id="person-qualifications"></div>
@@ -290,6 +293,23 @@
         </div>
       </div>
       <button class="btn-secondary" id="person-faction-add-btn" type="button">+ 陣営を追加</button>
+      <div class="section-label" style="padding-left:0;">強さ(複数可、成長する場合は年代順に登録)</div>
+      <div class="form-note">ティア(S/A/B/C)+点数(任意)で記録し、詳細画面では矢印で推移を表示します。人物一覧で最新・最高の強さ順に並び替えできます</div>
+      <ul id="person-strength-list" class="list" style="padding:0;"></ul>
+      <div class="form-row">
+        <label>強さを追加</label>
+        <div class="event-time-row">
+          <input id="person-strength-add-start" type="number" min="0" max="3000" placeholder="年">
+          <select id="person-strength-add-tier">
+            <option value="S">S</option>
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C" selected>C</option>
+          </select>
+          <input id="person-strength-add-score" type="number" placeholder="点数(任意)">
+        </div>
+      </div>
+      <button class="btn-secondary" id="person-strength-add-btn" type="button">+ 強さを追加</button>
       <div class="section-label" style="padding-left:0;">能力(複数可)</div>
       <ul id="person-ability-list" class="list" style="padding:0;"></ul>
       <div class="form-row">
