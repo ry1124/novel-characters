@@ -51,9 +51,19 @@ function peopleMapCache() { return new Map(people.map((p) => [p.id, p])); }
 function personById(id) { return people.find((p) => p.id === id); }
 function eventById(id) { return events.find((e) => e.id === id); }
 
+// 享年(数え年): 没年-生年+1。没年は手入力(deathYear)優先、未入力なら死亡扱いの出来事の年から推測する
+function kyonenOf(p) {
+  if (p.birthYear == null) return null;
+  const death = getDeathInfo(p.id);
+  const deathYear = p.deathYear != null ? p.deathYear : (death ? death.year : null);
+  if (deathYear == null) return null;
+  return deathYear - p.birthYear + 1;
+}
+
 function formatPersonYears(p) {
   if (!p.birthYear && !p.deathYear) return '';
-  return `${p.birthYear ?? '?'}年〜${p.deathYear ?? ''}${p.deathYear ? '年' : ''}`;
+  const kyonen = kyonenOf(p);
+  return `${p.birthYear ?? '?'}年〜${p.deathYear ?? ''}${p.deathYear ? '年' : ''}${kyonen != null ? `(享年${kyonen})` : ''}`;
 }
 
 // 陣営の推移を「東軍(1590年) → 西軍(1600年)」のように矢印で繋げて表示する(所属年の昇順)
@@ -76,6 +86,18 @@ function latestQualificationsOf(p) {
     if (!prev || (q.startYear ?? -Infinity) >= (prev.startYear ?? -Infinity)) byName.set(q.qualification, q);
   });
   return [...byName.values()];
+}
+
+// この人物が参加したすべての出来事を通じて、討ち取った相手・負傷させた相手の名前を集める(重複は除く)
+function combatSummaryOf(p) {
+  const killed = new Set(), injured = new Set();
+  events.forEach((ev) => {
+    const part = (ev.participants || []).find((pt) => pt.personId === p.id);
+    if (!part) return;
+    killedIdsOf(part).forEach((id) => { const o = personById(id); if (o) killed.add(o.name); });
+    injuredIdsOf(part).forEach((id) => { const o = personById(id); if (o) injured.add(o.name); });
+  });
+  return { killed: [...killed], injured: [...injured] };
 }
 
 // 生年が分かっている人物だけ、指定した年の時点での年齢(満年齢、月は考慮しない簡易計算)を返す
@@ -816,6 +838,9 @@ function renderPersonDetail() {
   document.getElementById('person-skills').textContent = (p.skills || []).length
     ? `技: ${(p.skills || []).map((s) => s.description ? `${s.skill}(${s.description})` : s.skill).join('、')}`
     : '';
+  const combat = combatSummaryOf(p);
+  document.getElementById('person-killed').textContent = combat.killed.length ? `討ち取った相手: ${combat.killed.join('・')}` : '';
+  document.getElementById('person-injured').textContent = combat.injured.length ? `負傷させた相手: ${combat.injured.join('・')}` : '';
   document.getElementById('person-years').textContent = formatPersonYears(p);
   document.getElementById('person-episode').textContent = p.episode || '';
   document.getElementById('person-episode-label').style.display = p.episode ? '' : 'none';
