@@ -256,6 +256,7 @@ function renderRoleList() {
   listEl.innerHTML = roleDraftRows.map((row) => `<li class="participant-row summary-row" data-row-id="${row.rowId}">
       <input class="pr-start" type="number" min="0" max="3000" value="${row.startYear ?? ''}" placeholder="開始">
       <input class="pr-end" type="number" min="0" max="3000" value="${row.endYear ?? ''}" placeholder="終了">
+      <input class="pr-org" type="text" list="affiliation-datalist" value="${escapeHtml(row.organization || '')}" placeholder="組織">
       <input class="pr-name" type="text" value="${escapeHtml(row.role || '')}" placeholder="役職名">
       <select class="pr-category">${roleCategoryOptionsHtml(row.category)}</select>
       <button type="button" class="remove-btn" data-remove-role="${row.rowId}">×</button>
@@ -1714,7 +1715,7 @@ async function savePersonForm() {
       category: r.category || '',
       startYear: r.startYear != null && r.startYear !== '' ? clampYear(r.startYear) : null,
       endYear: r.endYear != null && r.endYear !== '' ? clampYear(r.endYear) : null,
-      ...(r.organization ? { organization: r.organization } : {}),
+      ...((r.organization || '').trim() ? { organization: r.organization.trim() } : {}),
     }))
     .sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   const affiliations = affiliationDraftRows
@@ -3007,6 +3008,7 @@ function wireForms() {
     if (e.target.classList.contains('pr-start')) draft.startYear = e.target.value ? clampYear(e.target.value) : null;
     else if (e.target.classList.contains('pr-end')) draft.endYear = e.target.value ? clampYear(e.target.value) : null;
     else if (e.target.classList.contains('pr-name')) draft.role = e.target.value;
+    else if (e.target.classList.contains('pr-org')) draft.organization = e.target.value;
   });
   roleList.addEventListener('change', (e) => {
     const row = e.target.closest('.summary-row');
