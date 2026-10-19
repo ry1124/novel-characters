@@ -1262,9 +1262,13 @@ function renderOrgChart() {
     if (!personRelevantAtYear(p, year)) return; // まだ生まれていない・すでに亡くなっている人は出さない
     const past = orgRolesOfP.filter((r) => r.endYear != null && r.endYear < year).sort((a, b) => a.endYear - b.endYear).pop();
     const note = past ? `元${past.role}` : '';
-    const hit = affs.filter((a) => activeAt(a, p)).sort(byYear)[0];
-    if (hit) { members.push({ person: p, startYear: hit.startYear, endYear: hit.endYear, vassal, note }); return; }
-    // 役職を退いた後も、亡くなるまではその組織の一員として「所属」の列に出す(隠居した元当主など)
+    // 所属の記録がある人は、所属の期間どおりに出す(所属の終わりの年=組織を離れた年。家臣が暇を出された・出奔した等)
+    if (affs.length) {
+      const hit = affs.filter((a) => activeAt(a, p)).sort(byYear)[0];
+      if (hit) members.push({ person: p, startYear: hit.startYear, endYear: hit.endYear, vassal, note });
+      return;
+    }
+    // 所属の記録が無く役職だけの人は、役職を退いた後も亡くなるまでその組織の一員として「所属」の列に出す(隠居した元当主など)
     if (past) members.push({ person: p, startYear: past.endYear, endYear: null, vassal, note });
   });
 
@@ -2921,13 +2925,32 @@ function activePeriodItems(list, key, year) {
   return (list || []).filter((r) => (r.startYear ?? -Infinity) <= year && (r.endYear ?? Infinity) >= year).map((r) => r[key]);
 }
 
-// その年に所属している組織。所属の期間に加えて、組織の役職を退いた後(隠居など)も亡くなるまでは所属しているものとして扱う
+// その年に所属している組織。所属の記録がある組織は所属の期間どおり(終わりの年=離れた年)。
+// 所属の記録が無く役職だけの組織は、役職を退いた後(隠居など)も亡くなるまでは所属しているものとして扱う
 function activeAffiliationsAt(p, year) {
   const names = new Set(activePeriodItems(p.affiliations, 'affiliation', year));
+  const recorded = new Set((p.affiliations || []).map((a) => a.affiliation));
   (p.roles || []).forEach((r) => {
-    if (r.organization && (r.startYear ?? -Infinity) <= year) names.add(r.organization);
+    if (r.organization && !recorded.has(r.organization) && (r.startYear ?? -Infinity) <= year) names.add(r.organization);
   });
   return [...names];
+}
+
+// 1回だけの手直し: 以前のバージョンは、組織の役職を入れた時に自動で付けた所属の終わりを役職の終わりと同じ年にしていた。
+// 所属の終わりは「組織を離れた年」として扱うようにしたため、役職とまったく同じ期間の所属(=自動で付けたもの)は終わりを空に戻す
+async function migrateAutoAffiliationEnds() {
+  const KEY = 'jinbutsuroku-migrated-aff-end-v1';
+  try { if (localStorage.getItem(KEY)) return; } catch (e) { return; }
+  for (const p of people) {
+    let changed = false;
+    (p.affiliations || []).forEach((a) => {
+      if (a.endYear == null) return;
+      const auto = (p.roles || []).some((r) => r.organization === a.affiliation && r.endYear === a.endYear && (r.startYear ?? null) === (a.startYear ?? null));
+      if (auto) { a.endYear = null; changed = true; }
+    });
+    if (changed) await DB.updatePerson(p);
+  }
+  try { localStorage.setItem(KEY, '1'); } catch (e) { /* 次回もう一度試すだけ */ }
 }
 
 // 人物詳細の「年代で見る」: 生年を起点に、役職・所属・参加した出来事から分かる最後の年までをプルダウンの範囲にする
@@ -4126,6 +4149,8 @@ function wireUpdateCheck() {
 }
 
 async function init() {
+  await refreshAll();
+  await migrateAutoAffiliationEnds();
   await refreshAll();
   wireNav();
   wireLists();
