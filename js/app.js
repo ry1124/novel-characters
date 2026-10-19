@@ -589,7 +589,7 @@ function openPersonForm(id) {
     deathEl.value = p.deathYear ?? '';
     summaryDraftRows = loadSummaryRowsForPerson(id);
     roleDraftRows = (p.roles || []).map((r) => ({ rowId: nextRoleRowId(), role: r.role, category: r.category || '', startYear: r.startYear, endYear: r.endYear, organization: r.organization || '' }));
-    affiliationDraftRows = (p.affiliations || []).map((a) => ({ rowId: nextAffiliationRowId(), affiliation: a.affiliation, startYear: a.startYear, endYear: a.endYear }));
+    affiliationDraftRows = (p.affiliations || []).map((a) => ({ rowId: nextAffiliationRowId(), affiliation: a.affiliation, startYear: a.startYear, endYear: a.endYear, vassal: !!a.vassal }));
     qualificationDraftRows = (p.qualifications || []).map((q) => ({ rowId: nextQualificationRowId(), qualification: q.qualification, startYear: q.startYear, endYear: q.endYear }));
     medalDraftRows = (p.medals || []).map((m) => ({ rowId: nextMedalRowId(), medal: m.medal, rank: m.rank, startYear: m.startYear }));
     abilityDraftRows = (p.abilities || []).map((a) => ({ rowId: nextAbilityRowId(), ability: a.ability }));
@@ -1233,7 +1233,7 @@ function renderOrgChart() {
     affs.forEach((a) => [a.startYear, a.endYear].forEach((y) => { if (y != null) years.add(y); }));
     if (roleHolderIds.has(p.id)) return; // 役職のある人は役職の列に出す
     const hit = affs.filter((a) => activeAt(a, p)).sort(byYear)[0];
-    if (hit) members.push({ person: p, startYear: hit.startYear, endYear: hit.endYear });
+    if (hit) members.push({ person: p, startYear: hit.startYear, endYear: hit.endYear, vassal: affs.some((a) => a.vassal) });
   });
 
   // 時点の選択肢: 役職・所属・爵位に出てくる年の最小〜最大
@@ -1245,15 +1245,32 @@ function renderOrgChart() {
   sel.innerHTML = opts;
   sel.value = orgChartYear;
 
-  // 役職の列は、組織で決めた偉さの順に左から並べる
+  // 役職の列は、組織で決めた偉さの順に左から並べる。家臣の役職・家臣のメンバーは「家臣」の枝に分け、爵位は付けない
   const order = orgRoleOrder(name);
-  const cols = [...roleCols.values()].map((c) => ({ ...c, items: c.items.sort(byYear) }))
+  const vassalRoles = new Set(orgVassalRoles(name));
+  const sortedCols = [...roleCols.values()].map((c) => ({ ...c, items: c.items.sort(byYear) }))
     .sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role));
-  if (members.length) cols.push({ role: '所属', category: '', items: members.sort(byYear), isMembers: true });
+  const familyCols = sortedCols.filter((c) => !vassalRoles.has(c.role));
+  const vassalCols = sortedCols.filter((c) => vassalRoles.has(c.role));
+  const familyMembers = members.filter((m) => !m.vassal).sort(byYear);
+  const vassalMembers = members.filter((m) => m.vassal).sort(byYear);
+  if (familyMembers.length) familyCols.push({ role: '所属', category: '', items: familyMembers, isMembers: true });
+  if (vassalMembers.length) vassalCols.push({ role: '家臣', category: '', items: vassalMembers, isMembers: true });
+  const peerage = peerageAt(name, year);
+  const useGroups = vassalCols.length > 0;
+  const groups = useGroups
+    ? [{ label: '一門', sub: peerage, cols: familyCols }, { label: '家臣', sub: '', cols: vassalCols, isVassal: true }]
+      .filter((g) => g.cols.length || (!g.isVassal && g.sub))
+    : [{ label: '', sub: '', cols: familyCols }];
+  const cols = groups.flatMap((g) => g.cols);
 
-  const W = 104, H = 46, GAP_X = 18, GAP_Y = 22;
-  const orgY = 20, headY = 110, itemY0 = 186;
-  const totalW = Math.max(cols.length, 1) * W + Math.max(0, cols.length - 1) * GAP_X;
+  const W = 104, H = 46, GAP_X = 18, GAP_Y = 22, GROUP_GAP = 44;
+  const orgY = 20;
+  const groupY = 100;
+  const headY = useGroups ? 190 : 110;
+  const itemY0 = headY + 76;
+  const groupW = (g) => Math.max(g.cols.length, 1) * W + Math.max(0, g.cols.length - 1) * GAP_X;
+  const totalW = groups.reduce((s, g) => s + groupW(g), 0) + Math.max(0, groups.length - 1) * GROUP_GAP;
   const width = Math.max(totalW + 40, 320);
   const maxItems = Math.max(1, ...cols.map((c) => c.items.length));
   const height = itemY0 + maxItems * (H + GAP_Y) + 10;
@@ -1280,27 +1297,49 @@ function renderOrgChart() {
   };
 
   const orgX = width / 2 - W / 2;
-  const x0 = (width - totalW) / 2;
-  if (cols.length) {
-    // 組織 → 各役職の列への線(家系図の親→子と同じく、横一本の線から各列へ下ろす)
-    const busY = (orgY + H + headY) / 2;
-    line(width / 2, orgY + H, width / 2, busY);
-    const colX = (i) => x0 + i * (W + GAP_X);
-    line(colX(0) + W / 2, busY, colX(cols.length - 1) + W / 2, busY);
-    cols.forEach((c, i) => {
-      const cx = colX(i) + W / 2;
-      line(cx, busY, cx, headY);
-      box(colX(i), headY, c.role, c.category || (c.isMembers ? `${c.items.length}人` : ''), { fill: '#ffffff', stroke: '#5b37b7', color: '#5b37b7', subColor: '#8a84a0' });
-      // 歴代は上から就任順に縦につなぐ
-      c.items.forEach((it, k) => {
-        const y = itemY0 + k * (H + GAP_Y);
-        line(cx, k === 0 ? headY + H : y - GAP_Y, cx, y);
-        box(colX(i), y, it.person.name, formatRolePeriod(it, it.person), { personId: it.person.id, fill: '#ece8f6', stroke: '#d8d0ef', color: '#1c1530', subColor: '#8a84a0' });
-      });
+  // 親の箱の下から、横一本の線を通して子の箱へ線を下ろす(家系図の親→子と同じ形)
+  const connect = (parentCx, parentBottom, childCxs, childTop) => {
+    if (!childCxs.length) return;
+    const busY = (parentBottom + childTop) / 2;
+    line(parentCx, parentBottom, parentCx, busY);
+    line(Math.min(parentCx, ...childCxs), busY, Math.max(parentCx, ...childCxs), busY);
+    childCxs.forEach((cx) => line(cx, busY, cx, childTop));
+  };
+  const drawCols = (gCols, gx) => gCols.map((c, i) => {
+    const x = gx + i * (W + GAP_X);
+    const cx = x + W / 2;
+    box(x, headY, c.role, c.category || (c.isMembers ? `${c.items.length}人` : ''), { fill: '#ffffff', stroke: '#5b37b7', color: '#5b37b7', subColor: '#8a84a0' });
+    // 歴代は上から就任順に縦につなぐ
+    c.items.forEach((it, k) => {
+      const y = itemY0 + k * (H + GAP_Y);
+      line(cx, k === 0 ? headY + H : y - GAP_Y, cx, y);
+      box(x, y, it.person.name, formatRolePeriod(it, it.person), { personId: it.person.id, fill: '#ece8f6', stroke: '#d8d0ef', color: '#1c1530', subColor: '#8a84a0' });
     });
+    return cx;
+  });
+  let gx = (width - totalW) / 2;
+  if (useGroups) {
+    // 組織 → 「一門(爵位つき)」「家臣」の箱 → それぞれの役職の列
+    const groupCxs = groups.map((g) => {
+      const gw = groupW(g);
+      const gcx = gx + gw / 2;
+      const colCxs = g.cols.length ? g.cols.map((c, i) => gx + i * (W + GAP_X) + W / 2) : [];
+      connect(gcx, groupY + H, colCxs, headY);
+      drawCols(g.cols, gx);
+      box(gcx - W / 2, groupY, g.label, g.sub, g.isVassal
+        ? { fill: '#f6efe4', stroke: '#a9896a', color: '#5f4a32', subColor: '#8a7660' }
+        : { fill: '#ffffff', stroke: '#5b37b7', color: '#5b37b7', subColor: '#5b37b7' });
+      gx += gw + GROUP_GAP;
+      return gcx;
+    });
+    connect(width / 2, orgY + H, groupCxs, groupY);
+  } else if (cols.length) {
+    const colCxs = cols.map((c, i) => gx + i * (W + GAP_X) + W / 2);
+    connect(width / 2, orgY + H, colCxs, headY);
+    drawCols(cols, gx);
   }
-  // 組織の箱には、その時点(全期間なら最新)の爵位を添える
-  box(orgX, orgY, name || '', peerageAt(name, year), { fill: '#5b37b7', stroke: '#5b37b7', color: '#ffffff', subColor: 'rgba(255,255,255,0.85)' });
+  // 組織の箱には、その時点(全期間なら最新)の爵位を添える。家臣の枝がある時は爵位は「一門」の箱の方に付ける
+  box(orgX, orgY, name || '', useGroups ? '' : peerage, { fill: '#5b37b7', stroke: '#5b37b7', color: '#ffffff', subColor: 'rgba(255,255,255,0.85)' });
   if (!cols.length) {
     const t = svgEl('text', { x: width / 2, y: headY + 20, 'text-anchor': 'middle', 'font-size': 12, fill: '#8a84a0' });
     t.textContent = year != null ? `${year}年の時点で所属・役職のある人物はいません` : '所属・役職のある人物はいません';
@@ -1377,7 +1416,7 @@ function renderOrganizations() {
       const periodText = e.periods.length ? `所属 ${e.periods.slice().sort(byYear).map((a) => formatRolePeriod(a, e.person)).join('、')}` : '';
       return `<li class="list-item list-item-indent" data-person-id="${e.person.id}">
         <div class="list-item-main">
-          <div class="list-item-title">${personNameWithBirthHtml(e.person)}</div>
+          <div class="list-item-title">${personNameWithBirthHtml(e.person)}${isOrgVassal(name, e.person) ? ' <span class="badge">家臣</span>' : ''}</div>
           <div class="list-item-sub">${escapeHtml([roleText, periodText].filter(Boolean).join(' ・ '))}</div>
         </div>
         <span class="list-item-chevron">›</span>
@@ -1386,6 +1425,18 @@ function renderOrganizations() {
     const peerage = formatPeerageHistory(name);
     return `<li class="list-group-header org-header"><span>${escapeHtml(name)}(${entries.length}人)${peerage ? `<span class="org-peerage">${escapeHtml(peerage)}</span>` : ''}</span><span class="org-header-links"><span class="org-edit-link" data-org-chart="${escapeHtml(name)}">組織図</span><span class="org-edit-link" data-org-name="${escapeHtml(name)}">編集 ›</span></span></li>${rowsHtml}`;
   }).join('');
+}
+
+// 家臣の役職(家老・用人など)。組織図では爵位を持つ一門とは別の「家臣」の枝に出す
+function orgVassalRoles(name) {
+  const org = organizations.find((o) => o.name === name);
+  return (org && org.vassalRoles) || [];
+}
+// その組織でこの人物が家臣かどうか(家臣の役職に就いている、または所属に家臣の印がある)
+function isOrgVassal(name, p) {
+  const vr = orgVassalRoles(name);
+  return (p.roles || []).some((r) => r.organization === name && vr.includes(r.role))
+    || (p.affiliations || []).some((a) => a.affiliation === name && a.vassal);
 }
 
 // 組織の役職の偉さの順(偉い順)。組織に保存した並び順を優先し、そこに無い役職は就任の早い順で後ろに足す
@@ -1434,16 +1485,19 @@ function openBulkAffiliationForm() {
         rowId: 'orgrole' + (bulkOrgRoleSeq++), startYear: r.startYear ?? null, endYear: r.endYear ?? null, role: r.role, category: r.category || '', personId: p.id,
       }));
       dedupeAffiliations(p.affiliations).filter((a) => a.affiliation === editingOrgName).forEach((a) => bulkOrgMemberRows.push({
-        rowId: 'orgmember' + (bulkOrgMemberSeq++), personId: p.id, startYear: a.startYear ?? null, endYear: a.endYear ?? null,
+        rowId: 'orgmember' + (bulkOrgMemberSeq++), personId: p.id, startYear: a.startYear ?? null, endYear: a.endYear ?? null, vassal: !!a.vassal,
       }));
     });
     const byYear = (a, b) => (a.startYear ?? 0) - (b.startYear ?? 0);
     bulkOrgRoleOrder = orgRoleOrder(editingOrgName);
+    bulkOrgVassalRoles = orgVassalRoles(editingOrgName).slice();
     bulkOrgRoleRows.sort((a, b) => (bulkOrgRoleOrder.indexOf(a.role) - bulkOrgRoleOrder.indexOf(b.role)) || byYear(a, b));
     bulkOrgMemberRows.sort(byYear);
   } else {
     bulkOrgRoleOrder = [];
+    bulkOrgVassalRoles = [];
   }
+  document.getElementById('bulk-affiliation-as-vassal').checked = false;
   document.getElementById('bulk-org-role-order-name').value = '';
   renderBulkOrgRoleOrder();
   renderBulkOrgRoleList();
@@ -1473,6 +1527,7 @@ function renderBulkOrgMemberList() {
       <input class="om-start" type="number" min="0" max="3000" value="${row.startYear ?? ''}" placeholder="開始">
       <input class="om-end" type="number" min="0" max="3000" value="${row.endYear ?? ''}" placeholder="終了">
       <div class="list-item-main">${person ? personNameWithBirthHtml(person) : '?'}</div>
+      <button type="button" class="vassal-toggle${row.vassal ? ' active' : ''}" data-member-vassal="${row.rowId}">家臣</button>
       <button type="button" class="remove-btn" data-remove-org-member="${row.rowId}">×</button>
     </li>`;
   }).join('');
@@ -1486,11 +1541,13 @@ function personNameWithBirthHtml(p) {
 
 // 組織の役職の偉さの順(上ほど偉い)。組織図では左から、組織一覧では上からこの順に並ぶ
 let bulkOrgRoleOrder = [];
+let bulkOrgVassalRoles = []; // 家臣の役職として印を付けたもの
 function renderBulkOrgRoleOrder() {
   const n = bulkOrgRoleOrder.length;
   document.getElementById('bulk-org-role-order-list').innerHTML = bulkOrgRoleOrder.map((role, i) => `<li class="participant-row org-order-row">
       <span class="org-order-num">${i + 1}</span>
       <div class="list-item-main">${escapeHtml(role)}</div>
+      <button type="button" class="vassal-toggle${bulkOrgVassalRoles.includes(role) ? ' active' : ''}" data-order-vassal="${i}">家臣</button>
       <button type="button" class="order-btn" data-order-up="${i}" ${i === 0 ? 'disabled' : ''}>↑</button>
       <button type="button" class="order-btn" data-order-down="${i}" ${i === n - 1 ? 'disabled' : ''}>↓</button>
       <button type="button" class="remove-btn" data-order-remove="${i}">×</button>
@@ -1999,6 +2056,7 @@ async function savePersonForm() {
       affiliation: a.affiliation.trim(),
       startYear: a.startYear != null && a.startYear !== '' ? clampYear(a.startYear) : null,
       endYear: a.endYear != null && a.endYear !== '' ? clampYear(a.endYear) : null,
+      ...(a.vassal ? { vassal: true } : {}), // 組織の編集画面で付けた「家臣」の印を、人物の編集で保存し直しても消さない
     }))
     .sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   const affiliationsUnique = dedupeAffiliations(affiliations);
@@ -3038,12 +3096,13 @@ function wireLists() {
       });
       for (const m of bulkOrgMemberRows) {
         const p = touch(m.personId);
-        if (p) p.affiliations = [...(p.affiliations || []), { affiliation, startYear: yearOf(m.startYear), endYear: yearOf(m.endYear) }];
+        if (p) p.affiliations = [...(p.affiliations || []), { affiliation, startYear: yearOf(m.startYear), endYear: yearOf(m.endYear), ...(m.vassal ? { vassal: true } : {}) }];
       }
     }
+    const asVassal = document.getElementById('bulk-affiliation-as-vassal').checked;
     for (const pid of bulkAffiliationCheckedIds) {
       const p = touch(pid);
-      if (p) p.affiliations = [...(p.affiliations || []), { affiliation, startYear, endYear }];
+      if (p) p.affiliations = [...(p.affiliations || []), { affiliation, startYear, endYear, ...(asVassal ? { vassal: true } : {}) }];
     }
     const byYear = (a, b) => (a.startYear ?? 0) - (b.startYear ?? 0);
     for (const r of roleRows) {
@@ -3053,7 +3112,7 @@ function wireLists() {
       p.roles = [...(p.roles || []), { role: r.role.trim(), category: r.category || '', startYear: rs, endYear: re, organization: affiliation }].sort(byYear);
       // 役職に就いた人がこの組織に所属していなければ、役職の期間で所属も付ける
       if (!(p.affiliations || []).some((a) => a.affiliation === affiliation)) {
-        p.affiliations = [...(p.affiliations || []), { affiliation, startYear: rs ?? startYear, endYear: re }];
+        p.affiliations = [...(p.affiliations || []), { affiliation, startYear: rs ?? startYear, endYear: re, ...(bulkOrgVassalRoles.includes(r.role.trim()) ? { vassal: true } : {}) }];
       }
     }
     for (const p of changed.values()) {
@@ -3066,7 +3125,8 @@ function wireLists() {
     const roleOrder = [...bulkOrgRoleOrder];
     roleRows.forEach((r) => { const role = r.role.trim(); if (!roleOrder.includes(role)) roleOrder.push(role); });
     if (peerages.length || roleOrder.length) {
-      await DB.putOrganization({ ...(organizations.find((o) => o.name === affiliation) || {}), name: affiliation, peerages, roleOrder });
+      const vassalRoles = bulkOrgVassalRoles.filter((r) => roleOrder.includes(r));
+      await DB.putOrganization({ ...(organizations.find((o) => o.name === affiliation) || {}), name: affiliation, peerages, roleOrder, vassalRoles });
     } else if (editing || organizations.some((o) => o.name === affiliation)) await DB.deleteOrganization(affiliation);
     if (editing && orgChartName === editingOrgName) orgChartName = affiliation; // 組織図から編集して名前を変えた時、戻った組織図も新しい名前で出す
     await refreshAll();
@@ -3119,6 +3179,12 @@ function wireLists() {
     else if (e.target.classList.contains('om-end')) draft.endYear = val;
   });
   orgMemberList.addEventListener('click', (e) => {
+    const vassalBtn = e.target.closest('[data-member-vassal]');
+    if (vassalBtn) {
+      const draft = bulkOrgMemberRows.find((r) => r.rowId === vassalBtn.dataset.memberVassal);
+      if (draft) { draft.vassal = !draft.vassal; renderBulkOrgMemberList(); }
+      return;
+    }
     const btn = e.target.closest('[data-remove-org-member]');
     if (!btn) return;
     bulkOrgMemberRows = bulkOrgMemberRows.filter((r) => r.rowId !== btn.dataset.removeOrgMember);
@@ -3164,13 +3230,18 @@ function wireLists() {
     const up = e.target.closest('[data-order-up]');
     const down = e.target.closest('[data-order-down]');
     const remove = e.target.closest('[data-order-remove]');
+    const vassal = e.target.closest('[data-order-vassal]');
     const swap = (i, j) => { [bulkOrgRoleOrder[i], bulkOrgRoleOrder[j]] = [bulkOrgRoleOrder[j], bulkOrgRoleOrder[i]]; };
-    if (up) { const i = Number(up.dataset.orderUp); if (i > 0) swap(i, i - 1); }
+    if (vassal) {
+      const role = bulkOrgRoleOrder[Number(vassal.dataset.orderVassal)];
+      bulkOrgVassalRoles = bulkOrgVassalRoles.includes(role) ? bulkOrgVassalRoles.filter((r) => r !== role) : [...bulkOrgVassalRoles, role];
+    } else if (up) { const i = Number(up.dataset.orderUp); if (i > 0) swap(i, i - 1); }
     else if (down) { const i = Number(down.dataset.orderDown); if (i < bulkOrgRoleOrder.length - 1) swap(i, i + 1); }
     else if (remove) {
       const role = bulkOrgRoleOrder[Number(remove.dataset.orderRemove)];
       if (bulkOrgRoleRows.some((r) => r.role === role)) { alert(`「${role}」に就いている人がいるため消せません。先に下の役職の行を消すか、別の役職に変えてください`); return; }
       bulkOrgRoleOrder = bulkOrgRoleOrder.filter((r) => r !== role);
+      bulkOrgVassalRoles = bulkOrgVassalRoles.filter((r) => r !== role);
     } else return;
     renderBulkOrgRoleOrder();
     renderBulkOrgRoleList();
