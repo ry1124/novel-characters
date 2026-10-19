@@ -214,6 +214,16 @@ html, body {
 .skill-row textarea { font-size: 13px; padding: 6px 8px; border-radius: 8px; background: var(--surface2); border: 0; color: var(--text); resize: vertical; min-height: 40px; font-family: inherit; }
 
 .settings-btn-row { padding: 10px 0; }
+.settings-card { background: var(--surface2); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; }
+.settings-card .btn-primary, .settings-card .btn-secondary { margin-top: 10px; }
+.settings-version-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; }
+.settings-version-row b { font-size: 26px; }
+.toast {
+  position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(10px);
+  max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 10px; background: rgba(40,40,40,0.95); color: #fff;
+  font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 1000;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .settings-action { border: 0; border-radius: 10px; padding: 10px 14px; background: var(--surface2); color: var(--accent); font-size: 15px; font-weight: 600; }
 .settings-action:disabled { opacity: 0.5; }
 

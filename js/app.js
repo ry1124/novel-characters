@@ -169,6 +169,8 @@ function applyView(viewId) {
   const renderFn = RENDER_FNS[viewId];
   if (renderFn) renderFn();
   refreshIndexTarget(viewId); // renderFnが無い画面(詳細画面など)に移った時にも、右端インデックスバーを隠す
+  // 編集中に新しいバージョンを用意してあれば、編集画面を離れたところで切り替える
+  if (pendingReload && !UPDATE_BUSY_VIEWS.includes(viewId)) { pendingReload = false; location.reload(); }
 }
 
 // 編集フォームに未保存の変更がある状態でそこから離れようとした時だけ確認する
@@ -3253,59 +3255,84 @@ async function fetchLatestVersion() {
   return m[1];
 }
 
-// service-worker.js自体は中身(バイト列)が変わらないリリースもあるため、
-// ブラウザの自動更新チェックだけでは新しさに気づけない場合がある。
-// そのため、新しいバージョンがあると分かったら unregister→再登録して、確実に新しい内容を取りに行かせる
-async function applyServiceWorkerUpdate() {
-  if (!('serviceWorker' in navigator)) return;
-  const reg = await navigator.serviceWorker.getRegistration();
-  if (reg) await reg.unregister().catch(() => {});
-  await navigator.serviceWorker.register('service-worker.js').catch(() => {});
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
-async function checkForUpdate() {
-  const statusEl = document.getElementById('update-status');
+// 確認の結果を、設定画面の表示とトーストの両方に出す(自動確認の結果も同じ欄に残す)
+function reportUpdate(msg, manual) {
+  const t = new Date();
+  document.getElementById('update-status').textContent = `${msg}（${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')} に確認）`;
+  if (manual) showToast(msg);
+}
+
+// 入力途中の画面では読み込み直さない(書きかけの内容が消えないように)
+const UPDATE_BUSY_VIEWS = ['view-edit-person', 'view-edit-event', 'view-event-map-editor'];
+const isUpdateBusy = () => UPDATE_BUSY_VIEWS.some((v) => document.getElementById(v).classList.contains('active'));
+let pendingReload = false;
+let updateInFlight = false;
+const RELOADED_KEY = 'jinbutsuroku-reloaded-for';
+// 新しいバージョンがあれば、そのファイル一式を(配信キャッシュを素通りして)取り、本当に新しい版かを確かめてから
+// 新しいキャッシュに入れ、画面を読み込み直す。service-worker.js 自体は中身が変わらないリリースもあるので、
+// ブラウザの更新チェックだけに頼らない
+async function checkForUpdate(manual) {
+  if (updateInFlight) return;
+  if (!('caches' in window)) { if (manual) reportUpdate('このブラウザでは確認できません', true); return; }
+  updateInFlight = true;
   const btn = document.getElementById('btn-check-update');
-  btn.disabled = true;
-  statusEl.textContent = '確認中...';
+  if (manual) { btn.disabled = true; document.getElementById('update-status').textContent = '確認しています…'; }
   try {
     const latest = await fetchLatestVersion();
     if (latest === APP_VERSION) {
-      statusEl.textContent = `最新版です(バージョン ${APP_VERSION})`;
-    } else {
-      autoUpdateNoticeShown = true;
-      await applyServiceWorkerUpdate();
-      statusEl.textContent = `新しいバージョン(${latest})に更新しました。まもなく画面が更新されます。`;
-      setTimeout(() => location.reload(), 600); // メッセージが一瞬見えるよう、少し待ってから更新する
+      try { sessionStorage.removeItem(RELOADED_KEY); } catch (e) { /* なくても動く */ }
+      reportUpdate(`最新のバージョン（${APP_VERSION}）です`, manual);
+      return;
     }
-  } catch (err) {
-    console.error('バージョン確認に失敗:', err);
-    statusEl.textContent = '確認できませんでした。ネット接続を確認してください。';
+    // 読み込み直したのにまだ古いときは、自動では繰り返さない(読み込み直しが止まらなくなるのを防ぐ)
+    let reloaded = null;
+    try { reloaded = sessionStorage.getItem(RELOADED_KEY); } catch (e) { /* なくても動く */ }
+    if (!manual && reloaded === latest) {
+      reportUpdate(`新しいバージョン（${latest}）に切り替わりませんでした。「最新バージョンか確認する」を押してください`, false);
+      return;
+    }
+
+    const entries = await fetchFreshAssets(latest);   // 古いファイルしか返らなければここで止まる(次の確認でやり直す)
+    const name = 'jinbutsuroku-cache-' + latest;
+    await caches.delete(name);                         // 前に途中まで入れたものがあれば捨てる
+    const cache = await caches.open(name);
+    await Promise.all(entries.map(([href, res]) => cache.put(href, res)));
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => k !== name).map((k) => caches.delete(k)));
+    const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+    if (reg) reg.update().catch(() => {});
+    try { sessionStorage.setItem(RELOADED_KEY, latest); } catch (e) { /* なくても動く */ }
+
+    if (isUpdateBusy()) {
+      pendingReload = true;
+      reportUpdate(`新しいバージョン（${latest}）があります。編集を終えたら更新します`, true);
+    } else {
+      reportUpdate(`新しいバージョン（${latest}）に更新します`, true);
+      setTimeout(() => location.reload(), 900);
+    }
+  } catch (e) {
+    const msg = String(e.message || '').includes('まだ')
+      ? '新しいバージョンを公開した直後で、まだ準備中です。数分後にもう一度確認してください'
+      : '確認できませんでした。通信状態を確かめてください';
+    reportUpdate(msg, manual);
   } finally {
+    updateInFlight = false;
     btn.disabled = false;
   }
 }
 
-let autoUpdateNoticeShown = false;
-let autoUpdateCheckInFlight = false;
-// アプリを開いた・前面に戻ったときに、裏で静かにバージョンを確認する(ユーザーが設定画面を開く必要がないようにするため)
-async function autoCheckUpdateSilently() {
-  if (autoUpdateCheckInFlight || autoUpdateNoticeShown) return;
-  autoUpdateCheckInFlight = true;
-  try {
-    const latest = await fetchLatestVersion();
-    if (latest !== APP_VERSION) {
-      autoUpdateNoticeShown = true;
-      await applyServiceWorkerUpdate();
-      location.reload();
-    }
-  } catch (err) { /* オフラインなどはここでは何もしない(設定画面のボタンでエラーを伝える) */ }
-  finally { autoUpdateCheckInFlight = false; }
-}
-
 function wireUpdateCheck() {
-  document.getElementById('btn-check-update').addEventListener('click', checkForUpdate);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') autoCheckUpdateSilently(); });
+  document.getElementById('btn-check-update').addEventListener('click', () => checkForUpdate(true));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(false); });
 }
 
 async function init() {
@@ -3322,9 +3349,10 @@ async function init() {
   document.getElementById('app-version-home').textContent = 'v' + APP_VERSION;
   applyView('view-search');
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('service-worker.js').catch(() => {});
+    // service-worker.js が読み込むファイル(version.js など)もブラウザのキャッシュを通さずに更新を確かめる
+    navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' }).catch(() => {});
   }
-  setTimeout(autoCheckUpdateSilently, 4000); // 起動が落ち着いてから、裏で新しいバージョンがないか確認する
+  checkForUpdate(false); // 開いたときに、裏で新しいバージョンがないか確認する
 }
 
 document.addEventListener('DOMContentLoaded', init);
