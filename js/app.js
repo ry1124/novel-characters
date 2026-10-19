@@ -243,8 +243,11 @@ let roleDraftRows = [];
 let roleRowSeq = 0;
 function nextRoleRowId() { return 'role' + (roleRowSeq++); }
 
-function formatRolePeriod(row) {
-  return `${row.startYear ?? '?'}年〜${row.endYear != null ? row.endYear + '年' : ''}`;
+// 開始年が空欄なら、その人物の生年から(生まれた時から)とみなして表示する
+function formatRolePeriod(row, person) {
+  const owner = person || row.person;
+  const start = row.startYear ?? (owner ? owner.birthYear : null);
+  return `${start ?? '?'}年〜${row.endYear != null ? row.endYear + '年' : ''}`;
 }
 
 function roleCategoryOptionsHtml(selected) {
@@ -901,17 +904,17 @@ function renderPersonDetail() {
   document.getElementById('person-genpuku').textContent = p.genpukuYear != null ? `元服: ${formatYearMonth(p.genpukuYear, p.genpukuMonth)}` : '';
   const rolesSorted = (p.roles || []).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
   document.getElementById('person-roles-timeline').innerHTML = rolesSorted.map((r) => `<li class="timeline-item">
-      <div class="timeline-year"${r.startYear != null ? ` data-year="${r.startYear}"` : ''}>${formatRolePeriod(r)}</div>
+      <div class="timeline-year"${(r.startYear ?? p.birthYear) != null ? ` data-year="${r.startYear ?? p.birthYear}"` : ''}>${formatRolePeriod(r, p)}</div>
       <div class="timeline-body"><div class="timeline-title">${r.organization ? `${escapeHtml(r.organization)} ` : ''}${escapeHtml(r.role)}${r.category ? ` <span class="badge">${escapeHtml(r.category)}</span>` : ''}</div></div>
     </li>`).join('');
   document.getElementById('person-relationships').innerHTML = (p.relationships || []).map((r) => {
     const rp = personById(r.personId);
     return `<span class="chip-link" data-person-id="${r.personId}">${escapeHtml(r.type)}: ${escapeHtml(rp ? rp.name : '?')}</span>`;
   }).join('');
-  document.getElementById('person-affiliations').textContent = (p.affiliations || []).map((a) => `${a.affiliation}(${formatRolePeriod(a)})`).join('、');
+  document.getElementById('person-affiliations').textContent = (p.affiliations || []).map((a) => `${a.affiliation}(${formatRolePeriod(a, p)})`).join('、');
   document.getElementById('person-qualifications').textContent = latestQualificationsOf(p)
     .sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0))
-    .map((q) => `${q.qualification}(${formatRolePeriod(q)})`).join('、');
+    .map((q) => `${q.qualification}(${formatRolePeriod(q, p)})`).join('、');
   document.getElementById('person-medals').textContent = (p.medals || []).map((m) => {
     const parts = [m.rank, m.startYear != null ? `${m.startYear}年` : null].filter(Boolean);
     return parts.length ? `${m.medal}(${parts.join('・')})` : m.medal;
