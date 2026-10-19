@@ -1,6 +1,6 @@
 // IndexedDB ラッパー: 人物・出来事(参加者つき)を永続化する
 const DB_NAME = 'JinbutsurokuDB';
-const DB_VERSION = 2; // 2: 時代(eras)ストアを廃止(人物の生年〜没年に置き換え)
+const DB_VERSION = 3; // 2: 時代(eras)ストアを廃止(人物の生年〜没年に置き換え) 3: 組織(爵位など組織自体の情報)ストアを追加
 let dbPromise = null;
 
 function openDB() {
@@ -18,6 +18,10 @@ function openDB() {
       if (!db.objectStoreNames.contains('events')) {
         const store = db.createObjectStore('events', { keyPath: 'id', autoIncrement: true });
         store.createIndex('year', 'year', { unique: false });
+      }
+      // 組織のメンバーや役職は人物側に持たせたまま、組織そのものの情報(爵位の推移など)だけを組織名をキーにして持つ
+      if (!db.objectStoreNames.contains('organizations')) {
+        db.createObjectStore('organizations', { keyPath: 'name' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -83,6 +87,20 @@ const DB = {
     const store = await tx('events', 'readwrite');
     return promisifyRequest(store.delete(id));
   },
+  // ---- 組織(組織名がキー。{ name, peerages: [{ title, startYear }] }) ----
+  async getAllOrganizations() {
+    const store = await tx('organizations', 'readonly');
+    return promisifyRequest(store.getAll());
+  },
+  async putOrganization(org) {
+    const store = await tx('organizations', 'readwrite');
+    return promisifyRequest(store.put(org));
+  },
+  async deleteOrganization(name) {
+    const store = await tx('organizations', 'readwrite');
+    return promisifyRequest(store.delete(name));
+  },
+
   // 指定した人物が参加している出来事を、年の昇順で返す
   async getEventsForPerson(personId) {
     const all = await DB.getAllEvents();

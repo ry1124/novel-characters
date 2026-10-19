@@ -565,6 +565,11 @@
           <input id="bulk-affiliation-end" type="number" min="0" max="3000" placeholder="終了年(任意)">
         </div>
       </div>
+      <div class="section-label" style="padding-left:0;">爵位(年代ごと)</div>
+      <div class="form-note">授かった年ごとに1行。陞爵・降爵したら、その年の行を足す(例: 1200年 男爵、1230年 伯爵)</div>
+      <ul id="bulk-org-peerage-list" class="list" style="padding:0;"></ul>
+      <button class="btn-secondary" id="bulk-org-peerage-add-btn" type="button">+ 爵位を追加</button>
+      <datalist id="peerage-datalist"><option value="公爵"></option><option value="侯爵"></option><option value="伯爵"></option><option value="子爵"></option><option value="男爵"></option></datalist>
       <div class="section-label" style="padding-left:0;">組織内の役職(年代ごと)</div>
       <div class="form-note">例: 1200〜1215年 当主=A、1215年〜 当主=B のように、年代ごとに誰が就いたかを入れる。選んだ人物にはこの組織の所属も自動で付く</div>
       <ul id="bulk-org-role-list" class="list" style="padding:0;"></ul>

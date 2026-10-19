@@ -3,13 +3,13 @@ const Backup = (() => {
   const FORMAT = 'JinbutsurokuBackup';
 
   async function build() {
-    const [people, events] = await Promise.all([DB.getAllPeople(), DB.getAllEvents()]);
+    const [people, events, organizations] = await Promise.all([DB.getAllPeople(), DB.getAllEvents(), DB.getAllOrganizations()]);
     return {
       format: FORMAT,
-      version: 2,
+      version: 3,
       appVersion: typeof APP_VERSION !== 'undefined' ? APP_VERSION : '',
       exportedAt: new Date().toISOString(),
-      people, events,
+      people, events, organizations,
     };
   }
 
@@ -50,9 +50,12 @@ const Backup = (() => {
 
   // 復元: 既存データはすべて削除し、バックアップの内容に完全に置き換える
   async function restore(data) {
-    const [oldPeople, oldEvents] = await Promise.all([DB.getAllPeople(), DB.getAllEvents()]);
+    const [oldPeople, oldEvents, oldOrgs] = await Promise.all([DB.getAllPeople(), DB.getAllEvents(), DB.getAllOrganizations()]);
     for (const e of oldEvents) await DB.deleteEvent(e.id);
     for (const p of oldPeople) await DB.deletePerson(p.id);
+    for (const o of oldOrgs) await DB.deleteOrganization(o.name);
+    // 組織の情報は v3 以降のバックアップにだけ入っている(古いバックアップでは組織の爵位は空になる)
+    for (const org of data.organizations || []) await DB.putOrganization(org);
 
     for (const person of data.people) {
       const { id, eraId, ...rest } = person; // 旧バックアップのeraIdは捨てる

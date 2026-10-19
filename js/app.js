@@ -144,7 +144,25 @@ function personAgeAt(p, year) {
 }
 
 async function refreshAll() {
-  [people, events] = await Promise.all([DB.getAllPeople(), DB.getAllEvents()]);
+  [people, events, organizations] = await Promise.all([DB.getAllPeople(), DB.getAllEvents(), DB.getAllOrganizations()]);
+}
+
+// ===== 組織の爵位(年代ごと。爵位が上がる・変わる場合に対応) =====
+let organizations = []; // 爵位の候補(公爵〜男爵)は index.html の peerage-datalist。これ以外も自由に入力できる
+function peeragesOf(name) {
+  const org = organizations.find((o) => o.name === name);
+  return ((org && org.peerages) || []).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+}
+// year省略時は一番新しい爵位、指定時はその年の時点の爵位(まだ授かっていなければ空)
+function peerageAt(name, year) {
+  const list = peeragesOf(name);
+  if (year == null) return list.length ? list[list.length - 1].title : '';
+  const hit = list.filter((p) => (p.startYear ?? -Infinity) <= year).pop();
+  return hit ? hit.title : '';
+}
+// 「男爵(1200年) → 子爵(1230年)」のような推移
+function formatPeerageHistory(name) {
+  return peeragesOf(name).map((p) => (p.startYear != null ? `${p.title}(${p.startYear}年)` : p.title)).join(' → ');
 }
 
 // 指定した人物が死亡している出来事があれば、その中で一番年が遅いものを返す
@@ -1218,7 +1236,8 @@ function renderOrgChart() {
     if (hit) members.push({ person: p, startYear: hit.startYear, endYear: hit.endYear });
   });
 
-  // 時点の選択肢: 役職・所属に出てくる年の最小〜最大
+  // 時点の選択肢: 役職・所属・爵位に出てくる年の最小〜最大
+  peeragesOf(name).forEach((pg) => { if (pg.startYear != null) years.add(pg.startYear); });
   const sel = document.getElementById('org-chart-year');
   const ys = [...years];
   let opts = '<option value="">全期間(歴代)</option>';
@@ -1278,7 +1297,8 @@ function renderOrgChart() {
       });
     });
   }
-  box(orgX, orgY, name || '', '', { fill: '#5b37b7', stroke: '#5b37b7', color: '#ffffff' });
+  // 組織の箱には、その時点(全期間なら最新)の爵位を添える
+  box(orgX, orgY, name || '', peerageAt(name, year), { fill: '#5b37b7', stroke: '#5b37b7', color: '#ffffff', subColor: 'rgba(255,255,255,0.85)' });
   if (!cols.length) {
     const t = svgEl('text', { x: width / 2, y: headY + 20, 'text-anchor': 'middle', 'font-size': 12, fill: '#8a84a0' });
     t.textContent = year != null ? `${year}年の時点で所属・役職のある人物はいません` : '所属・役職のある人物はいません';
@@ -1318,6 +1338,8 @@ function renderOrganizations() {
     if (!orgRoles.has(r.organization)) orgRoles.set(r.organization, []);
     orgRoles.get(r.organization).push({ person: p, role: r.role, category: r.category || '', startYear: r.startYear, endYear: r.endYear });
   }));
+  // まだメンバーのいない組織でも、爵位などを登録してあれば一覧に出す
+  organizations.forEach((o) => { if (!groups.has(o.name)) groups.set(o.name, []); });
   const hadAny = groups.size > 0;
   let names = [...groups.keys()];
   if (q) names = names.filter((n) => n.toLowerCase().includes(q));
@@ -1349,7 +1371,8 @@ function renderOrganizations() {
         </div>
         <span class="list-item-chevron">›</span>
       </li>`).join('') : '';
-    return `<li class="list-group-header org-header"><span>${escapeHtml(name)}(${rows.length}人)</span><span class="org-header-links"><span class="org-edit-link" data-org-chart="${escapeHtml(name)}">組織図</span><span class="org-edit-link" data-org-name="${escapeHtml(name)}">編集 ›</span></span></li>${roleHtml}${memberHtml}`;
+    const peerage = formatPeerageHistory(name);
+    return `<li class="list-group-header org-header"><span>${escapeHtml(name)}(${rows.length}人)${peerage ? `<span class="org-peerage">${escapeHtml(peerage)}</span>` : ''}</span><span class="org-header-links"><span class="org-edit-link" data-org-chart="${escapeHtml(name)}">組織図</span><span class="org-edit-link" data-org-name="${escapeHtml(name)}">編集 ›</span></span></li>${roleHtml}${memberHtml}`;
   }).join('');
 }
 
@@ -1374,6 +1397,10 @@ function openBulkAffiliationForm() {
   bulkAffiliationCheckedIds = new Set();
   bulkOrgRoleRows = [];
   bulkOrgMemberRows = [];
+  bulkOrgPeerageRows = editing
+    ? peeragesOf(editingOrgName).map((pg) => ({ rowId: 'orgpeerage' + (bulkOrgPeerageSeq++), startYear: pg.startYear ?? null, title: pg.title }))
+    : [];
+  renderBulkOrgPeerageList();
   if (editing) {
     people.forEach((p) => {
       (p.roles || []).filter((r) => r.organization === editingOrgName).forEach((r) => bulkOrgRoleRows.push({
@@ -1390,6 +1417,17 @@ function openBulkAffiliationForm() {
   renderBulkOrgRoleList();
   renderBulkOrgMemberList();
   renderBulkAffiliationPersonList();
+}
+
+// 組織の爵位(年代ごと): {rowId, startYear, title}。授かった年・陞爵した年ごとに1行
+let bulkOrgPeerageRows = [];
+let bulkOrgPeerageSeq = 0;
+function renderBulkOrgPeerageList() {
+  document.getElementById('bulk-org-peerage-list').innerHTML = bulkOrgPeerageRows.map((row) => `<li class="participant-row summary-row org-peerage-row" data-row-id="${row.rowId}">
+      <input class="og-start" type="number" min="0" max="3000" value="${row.startYear ?? ''}" placeholder="年">
+      <input class="og-title" type="text" list="peerage-datalist" value="${escapeHtml(row.title || '')}" placeholder="爵位(例: 伯爵)">
+      <button type="button" class="remove-btn" data-remove-org-peerage="${row.rowId}">×</button>
+    </li>`).join('');
 }
 
 // 組織を編集する時の、今の所属メンバー(人物ごと・期間ごとに1行。期間の修正と外すことができる)
@@ -2927,9 +2965,12 @@ function wireLists() {
     const roleRows = bulkOrgRoleRows.filter((r) => (r.role || '').trim() && r.personId != null);
     if (bulkOrgRoleRows.some((r) => (r.role || '').trim() && r.personId == null)) { alert('役職に就いた人物を選んでください'); return; }
     const editing = editingOrgName != null;
-    if (!editing && !bulkAffiliationCheckedIds.size && !roleRows.length) { alert('所属する人物か、役職を入れてください'); return; }
-    if (editing && !bulkAffiliationCheckedIds.size && !roleRows.length && !bulkOrgMemberRows.length
-      && !confirm('所属する人物も役職もいなくなるため、この組織は一覧から消えます。よろしいですか?')) return;
+    const peerages = bulkOrgPeerageRows.filter((r) => (r.title || '').trim())
+      .map((r) => ({ title: r.title.trim(), startYear: r.startYear != null && r.startYear !== '' ? clampYear(r.startYear) : null }))
+      .sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+    if (!editing && !bulkAffiliationCheckedIds.size && !roleRows.length && !peerages.length) { alert('所属する人物か、役職か、爵位を入れてください'); return; }
+    if (editing && !bulkAffiliationCheckedIds.size && !roleRows.length && !bulkOrgMemberRows.length && !peerages.length
+      && !confirm('所属する人物も役職も爵位もなくなるため、この組織は一覧から消えます。よろしいですか?')) return;
     const startVal = document.getElementById('bulk-affiliation-start').value;
     const endVal = document.getElementById('bulk-affiliation-end').value;
     const startYear = startVal ? clampYear(startVal) : null;
@@ -2971,6 +3012,10 @@ function wireLists() {
       p.affiliations = dedupeAffiliations(p.affiliations).sort(byYear);
       await DB.updatePerson(p);
     }
+    // 組織そのものの情報(爵位)は組織名をキーに保存する。名前を変えた時は古い名前の記録を消して移す
+    if (editing && editingOrgName !== affiliation) await DB.deleteOrganization(editingOrgName);
+    if (peerages.length) await DB.putOrganization({ ...(organizations.find((o) => o.name === affiliation) || {}), name: affiliation, peerages });
+    else if (editing || organizations.some((o) => o.name === affiliation)) await DB.deleteOrganization(affiliation);
     if (editing && orgChartName === editingOrgName) orgChartName = affiliation; // 組織図から編集して名前を変えた時、戻った組織図も新しい名前で出す
     await refreshAll();
     goBack();
@@ -2988,8 +3033,28 @@ function wireLists() {
       p.roles = (p.roles || []).filter((r) => r.organization !== name);
       await DB.updatePerson(p);
     }
+    await DB.deleteOrganization(name);
     await refreshAll();
     goBack();
+  });
+
+  document.getElementById('bulk-org-peerage-add-btn').addEventListener('click', () => {
+    bulkOrgPeerageRows.push({ rowId: 'orgpeerage' + (bulkOrgPeerageSeq++), startYear: null, title: '' });
+    renderBulkOrgPeerageList();
+  });
+  const orgPeerageList = document.getElementById('bulk-org-peerage-list');
+  orgPeerageList.addEventListener('input', (e) => {
+    const row = e.target.closest('.org-peerage-row');
+    const draft = row && bulkOrgPeerageRows.find((r) => r.rowId === row.dataset.rowId);
+    if (!draft) return;
+    if (e.target.classList.contains('og-start')) draft.startYear = e.target.value === '' ? null : Number(e.target.value);
+    else if (e.target.classList.contains('og-title')) draft.title = e.target.value;
+  });
+  orgPeerageList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-org-peerage]');
+    if (!btn) return;
+    bulkOrgPeerageRows = bulkOrgPeerageRows.filter((r) => r.rowId !== btn.dataset.removeOrgPeerage);
+    renderBulkOrgPeerageList();
   });
 
   const orgMemberList = document.getElementById('bulk-org-member-list');

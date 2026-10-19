@@ -203,6 +203,7 @@ html, body {
 .list-group-header { padding: 14px 2px 4px; font-size: 13px; font-weight: 700; color: var(--text-dim); }
 .list-item.list-item-check { cursor: pointer; }
 .summary-row input[type="text"].pr-org { flex: 0 1 72px; }
+.org-peerage { display: block; font-size: 12px; font-weight: 600; color: var(--accent); margin-top: 2px; }
 .name-birth { font-size: 12px; font-weight: 400; color: var(--text-dim); }
 .org-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .org-header-links { display: flex; gap: 14px; flex: none; }
