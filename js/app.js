@@ -1245,8 +1245,10 @@ function renderOrgChart() {
   sel.innerHTML = opts;
   sel.value = orgChartYear;
 
+  // 役職の列は、組織で決めた偉さの順に左から並べる
+  const order = orgRoleOrder(name);
   const cols = [...roleCols.values()].map((c) => ({ ...c, items: c.items.sort(byYear) }))
-    .sort((a, b) => byYear(a.items[0], b.items[0]));
+    .sort((a, b) => order.indexOf(a.role) - order.indexOf(b.role));
   if (members.length) cols.push({ role: '所属', category: '', items: members.sort(byYear), isMembers: true });
 
   const W = 104, H = 46, GAP_X = 18, GAP_Y = 22;
@@ -1355,25 +1357,50 @@ function renderOrganizations() {
   emptyEl.classList.add('hidden');
   const byYear = (a, b) => (a.startYear ?? 0) - (b.startYear ?? 0);
   listEl.innerHTML = names.map((name) => {
-    const rows = groups.get(name).slice().sort(byYear);
-    const roleRows = (orgRoles.get(name) || []).slice().sort(byYear);
-    const roleHtml = roleRows.length ? `<li class="org-sub-header">役職(年代順)</li>` + roleRows.map((row) => `<li class="list-item list-item-indent" data-person-id="${row.person.id}">
+    // 同じ人物は1行にまとめ(役職が複数あっても、所属と役職の両方があっても1回だけ)、その組織での役職と期間を並べる。
+    // 並びは組織で決めた役職の偉さの順(一番偉い役職で比べる)→ 同じなら就任の早い順。役職のない人は最後
+    const byPerson = new Map();
+    const entryOf = (p) => {
+      if (!byPerson.has(p.id)) byPerson.set(p.id, { person: p, roles: [], periods: [] });
+      return byPerson.get(p.id);
+    };
+    groups.get(name).forEach((row) => { entryOf(row.person).periods.push(...row.periods); });
+    (orgRoles.get(name) || []).forEach((r) => entryOf(r.person).roles.push(r));
+    const order = orgRoleOrder(name);
+    const rankRole = (role) => { const i = order.indexOf(role); return i < 0 ? 9999 : i; };
+    const rankOf = (e) => (e.roles.length ? Math.min(...e.roles.map((r) => rankRole(r.role))) : Infinity);
+    const firstYear = (e) => Math.min(...[...e.roles, ...e.periods].map((x) => x.startYear ?? 0));
+    const entries = [...byPerson.values()].sort((a, b) => (rankOf(a) - rankOf(b)) || (firstYear(a) - firstYear(b)));
+    const rowsHtml = entries.map((e) => {
+      const roleText = e.roles.slice().sort((a, b) => (rankRole(a.role) - rankRole(b.role)) || byYear(a, b))
+        .map((r) => `${r.role}(${formatRolePeriod(r, e.person)})`).join('、');
+      const periodText = e.periods.length ? `所属 ${e.periods.slice().sort(byYear).map((a) => formatRolePeriod(a, e.person)).join('、')}` : '';
+      return `<li class="list-item list-item-indent" data-person-id="${e.person.id}">
         <div class="list-item-main">
-          <div class="list-item-title">${escapeHtml(row.role)}${row.category ? ` <span class="badge">${escapeHtml(row.category)}</span>` : ''} ・ ${escapeHtml(row.person.name)}</div>
-          <div class="list-item-sub">${formatRolePeriod(row)}</div>
+          <div class="list-item-title">${personNameWithBirthHtml(e.person)}</div>
+          <div class="list-item-sub">${escapeHtml([roleText, periodText].filter(Boolean).join(' ・ '))}</div>
         </div>
         <span class="list-item-chevron">›</span>
-      </li>`).join('') : '';
-    const memberHtml = rows.length ? (roleRows.length ? `<li class="org-sub-header">所属している人物</li>` : '') + rows.map((row) => `<li class="list-item list-item-indent" data-person-id="${row.person.id}">
-        <div class="list-item-main">
-          <div class="list-item-title">${escapeHtml(row.person.name)}</div>
-          <div class="list-item-sub">${row.periods.slice().sort(byYear).map((a) => formatRolePeriod(a, row.person)).join('、')}</div>
-        </div>
-        <span class="list-item-chevron">›</span>
-      </li>`).join('') : '';
+      </li>`;
+    }).join('');
     const peerage = formatPeerageHistory(name);
-    return `<li class="list-group-header org-header"><span>${escapeHtml(name)}(${rows.length}人)${peerage ? `<span class="org-peerage">${escapeHtml(peerage)}</span>` : ''}</span><span class="org-header-links"><span class="org-edit-link" data-org-chart="${escapeHtml(name)}">組織図</span><span class="org-edit-link" data-org-name="${escapeHtml(name)}">編集 ›</span></span></li>${roleHtml}${memberHtml}`;
+    return `<li class="list-group-header org-header"><span>${escapeHtml(name)}(${entries.length}人)${peerage ? `<span class="org-peerage">${escapeHtml(peerage)}</span>` : ''}</span><span class="org-header-links"><span class="org-edit-link" data-org-chart="${escapeHtml(name)}">組織図</span><span class="org-edit-link" data-org-name="${escapeHtml(name)}">編集 ›</span></span></li>${rowsHtml}`;
   }).join('');
+}
+
+// 組織の役職の偉さの順(偉い順)。組織に保存した並び順を優先し、そこに無い役職は就任の早い順で後ろに足す
+function orgRoleOrder(name) {
+  const org = organizations.find((o) => o.name === name);
+  const order = ((org && org.roleOrder) || []).slice();
+  const firstStart = new Map();
+  people.forEach((p) => (p.roles || []).forEach((r) => {
+    if (r.organization !== name || !r.role) return;
+    const y = r.startYear ?? 0;
+    if (!firstStart.has(r.role) || y < firstStart.get(r.role)) firstStart.set(r.role, y);
+  }));
+  [...firstStart.keys()].filter((r) => !order.includes(r))
+    .sort((a, b) => firstStart.get(a) - firstStart.get(b)).forEach((r) => order.push(r));
+  return order;
 }
 
 // ===== 組織の一括追加: 1つの組織を、複数人物にまとめて付与する =====
@@ -1411,9 +1438,14 @@ function openBulkAffiliationForm() {
       }));
     });
     const byYear = (a, b) => (a.startYear ?? 0) - (b.startYear ?? 0);
-    bulkOrgRoleRows.sort(byYear);
+    bulkOrgRoleOrder = orgRoleOrder(editingOrgName);
+    bulkOrgRoleRows.sort((a, b) => (bulkOrgRoleOrder.indexOf(a.role) - bulkOrgRoleOrder.indexOf(b.role)) || byYear(a, b));
     bulkOrgMemberRows.sort(byYear);
+  } else {
+    bulkOrgRoleOrder = [];
   }
+  document.getElementById('bulk-org-role-order-name').value = '';
+  renderBulkOrgRoleOrder();
   renderBulkOrgRoleList();
   renderBulkOrgMemberList();
   renderBulkAffiliationPersonList();
@@ -1452,17 +1484,33 @@ function personNameWithBirthHtml(p) {
   return `${escapeHtml(p.name)}${p.birthYear != null ? ` <span class="name-birth">${p.birthYear}年生</span>` : ''}`;
 }
 
+// 組織の役職の偉さの順(上ほど偉い)。組織図では左から、組織一覧では上からこの順に並ぶ
+let bulkOrgRoleOrder = [];
+function renderBulkOrgRoleOrder() {
+  const n = bulkOrgRoleOrder.length;
+  document.getElementById('bulk-org-role-order-list').innerHTML = bulkOrgRoleOrder.map((role, i) => `<li class="participant-row org-order-row">
+      <span class="org-order-num">${i + 1}</span>
+      <div class="list-item-main">${escapeHtml(role)}</div>
+      <button type="button" class="order-btn" data-order-up="${i}" ${i === 0 ? 'disabled' : ''}>↑</button>
+      <button type="button" class="order-btn" data-order-down="${i}" ${i === n - 1 ? 'disabled' : ''}>↓</button>
+      <button type="button" class="remove-btn" data-order-remove="${i}">×</button>
+    </li>`).join('');
+}
+
 // 組織内の役職(年代ごと): {rowId, startYear, endYear, role, category, personId}
 let bulkOrgRoleRows = [];
 let bulkOrgRoleSeq = 0;
 function renderBulkOrgRoleList() {
   document.getElementById('bulk-org-role-list').innerHTML = bulkOrgRoleRows.map((row) => {
     const person = row.personId != null ? personById(row.personId) : null;
+    // 役職は上の「役職の順番」に登録したものから、偉い順に並んだ選択肢で選ぶ
+    const roleOptions = `<option value="">役職を選ぶ-</option>` + bulkOrgRoleOrder
+      .map((r, i) => `<option value="${escapeHtml(r)}" ${r === row.role ? 'selected' : ''}>${i + 1}. ${escapeHtml(r)}</option>`).join('');
     return `<li class="participant-row-wrap summary-row org-role-row" data-row-id="${row.rowId}">
       <div class="participant-row-top">
         <input class="ob-start" type="number" min="0" max="3000" value="${row.startYear ?? ''}" placeholder="開始">
         <input class="ob-end" type="number" min="0" max="3000" value="${row.endYear ?? ''}" placeholder="終了">
-        <input class="ob-name" type="text" list="role-datalist" value="${escapeHtml(row.role || '')}" placeholder="役職名(例: 当主)">
+        <select class="ob-name ob-role-select">${roleOptions}</select>
         <select class="ob-category">${roleCategoryOptionsHtml(row.category)}</select>
         <button type="button" class="remove-btn" data-remove-org-role="${row.rowId}">×</button>
       </div>
@@ -3014,8 +3062,12 @@ function wireLists() {
     }
     // 組織そのものの情報(爵位)は組織名をキーに保存する。名前を変えた時は古い名前の記録を消して移す
     if (editing && editingOrgName !== affiliation) await DB.deleteOrganization(editingOrgName);
-    if (peerages.length) await DB.putOrganization({ ...(organizations.find((o) => o.name === affiliation) || {}), name: affiliation, peerages });
-    else if (editing || organizations.some((o) => o.name === affiliation)) await DB.deleteOrganization(affiliation);
+    // 役職の順番(偉い順)も組織の情報として保存する。順番に無い役職が行で使われていれば後ろに足す
+    const roleOrder = [...bulkOrgRoleOrder];
+    roleRows.forEach((r) => { const role = r.role.trim(); if (!roleOrder.includes(role)) roleOrder.push(role); });
+    if (peerages.length || roleOrder.length) {
+      await DB.putOrganization({ ...(organizations.find((o) => o.name === affiliation) || {}), name: affiliation, peerages, roleOrder });
+    } else if (editing || organizations.some((o) => o.name === affiliation)) await DB.deleteOrganization(affiliation);
     if (editing && orgChartName === editingOrgName) orgChartName = affiliation; // 組織図から編集して名前を変えた時、戻った組織図も新しい名前で出す
     await refreshAll();
     goBack();
@@ -3074,9 +3126,10 @@ function wireLists() {
   });
 
   document.getElementById('bulk-org-role-add-btn').addEventListener('click', () => {
+    if (!bulkOrgRoleOrder.length) { alert('先に上の「役職の順番」で役職を追加してください'); document.getElementById('bulk-org-role-order-name').focus(); return; }
     const last = bulkOrgRoleRows[bulkOrgRoleRows.length - 1];
     // 前の行の終了年を次の行の開始年に引き継ぐ(年代ごとに続けて入れやすいように)
-    bulkOrgRoleRows.push({ rowId: 'orgrole' + (bulkOrgRoleSeq++), startYear: last ? last.endYear ?? null : null, endYear: null, role: last ? last.role : '', category: last ? last.category : '', personId: null });
+    bulkOrgRoleRows.push({ rowId: 'orgrole' + (bulkOrgRoleSeq++), startYear: last ? last.endYear ?? null : null, endYear: null, role: last ? last.role : bulkOrgRoleOrder[0], category: last ? last.category : '', personId: null });
     renderBulkOrgRoleList();
   });
   const orgRoleList = document.getElementById('bulk-org-role-list');
@@ -3090,7 +3143,37 @@ function wireLists() {
   });
   orgRoleList.addEventListener('change', (e) => {
     const draft = orgRoleDraft(e.target);
-    if (draft && e.target.classList.contains('ob-category')) draft.category = e.target.value;
+    if (!draft) return;
+    if (e.target.classList.contains('ob-category')) draft.category = e.target.value;
+    else if (e.target.classList.contains('ob-name')) draft.role = e.target.value;
+  });
+
+  // 役職の順番: 追加・上下の入れ替え・削除(使っている役職は消せない)
+  const addRoleToOrder = () => {
+    const input = document.getElementById('bulk-org-role-order-name');
+    const role = input.value.trim();
+    if (!role) return;
+    if (!bulkOrgRoleOrder.includes(role)) bulkOrgRoleOrder.push(role);
+    input.value = '';
+    renderBulkOrgRoleOrder();
+    renderBulkOrgRoleList();
+  };
+  document.getElementById('bulk-org-role-order-add-btn').addEventListener('click', addRoleToOrder);
+  document.getElementById('bulk-org-role-order-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addRoleToOrder(); } });
+  document.getElementById('bulk-org-role-order-list').addEventListener('click', (e) => {
+    const up = e.target.closest('[data-order-up]');
+    const down = e.target.closest('[data-order-down]');
+    const remove = e.target.closest('[data-order-remove]');
+    const swap = (i, j) => { [bulkOrgRoleOrder[i], bulkOrgRoleOrder[j]] = [bulkOrgRoleOrder[j], bulkOrgRoleOrder[i]]; };
+    if (up) { const i = Number(up.dataset.orderUp); if (i > 0) swap(i, i - 1); }
+    else if (down) { const i = Number(down.dataset.orderDown); if (i < bulkOrgRoleOrder.length - 1) swap(i, i + 1); }
+    else if (remove) {
+      const role = bulkOrgRoleOrder[Number(remove.dataset.orderRemove)];
+      if (bulkOrgRoleRows.some((r) => r.role === role)) { alert(`「${role}」に就いている人がいるため消せません。先に下の役職の行を消すか、別の役職に変えてください`); return; }
+      bulkOrgRoleOrder = bulkOrgRoleOrder.filter((r) => r !== role);
+    } else return;
+    renderBulkOrgRoleOrder();
+    renderBulkOrgRoleList();
   });
   orgRoleList.addEventListener('click', async (e) => {
     const removeBtn = e.target.closest('[data-remove-org-role]');

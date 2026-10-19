@@ -570,6 +570,15 @@
       <ul id="bulk-org-peerage-list" class="list" style="padding:0;"></ul>
       <button class="btn-secondary" id="bulk-org-peerage-add-btn" type="button">+ 爵位を追加</button>
       <datalist id="peerage-datalist"><option value="公爵"></option><option value="侯爵"></option><option value="伯爵"></option><option value="子爵"></option><option value="男爵"></option></datalist>
+      <div class="section-label" style="padding-left:0;">役職の順番(上ほど偉い)</div>
+      <div class="form-note">この組織にある役職を偉い順に並べる。↑↓で入れ替えられる。組織図では左から、組織一覧では上からこの順に並ぶ</div>
+      <ul id="bulk-org-role-order-list" class="list" style="padding:0;"></ul>
+      <div class="form-row">
+        <div class="event-time-row">
+          <input id="bulk-org-role-order-name" type="text" list="role-datalist" placeholder="役職名(例: 当主)">
+          <button type="button" class="add-btn" id="bulk-org-role-order-add-btn">＋</button>
+        </div>
+      </div>
       <div class="section-label" style="padding-left:0;">組織内の役職(年代ごと)</div>
       <div class="form-note">例: 1200〜1215年 当主=A、1215年〜 当主=B のように、年代ごとに誰が就いたかを入れる。選んだ人物にはこの組織の所属も自動で付く</div>
       <ul id="bulk-org-role-list" class="list" style="padding:0;"></ul>
