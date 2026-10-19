@@ -1244,9 +1244,23 @@ function renderOrgChart() {
   people.forEach((p) => {
     const affs = dedupeAffiliations(p.affiliations).filter((a) => a.affiliation === name);
     affs.forEach((a) => [a.startYear, a.endYear].forEach((y) => { if (y != null) years.add(y); }));
-    if (roleHolderIds.has(p.id)) return; // 役職のある人は役職の列に出す
+    const orgRolesOfP = (p.roles || []).filter((r) => r.organization === name && r.role);
+    const vassal = affs.some((a) => a.vassal) || orgRolesOfP.some((r) => orgVassalRoles(name).includes(r.role));
+    if (year == null) {
+      if (roleHolderIds.has(p.id)) return; // 全期間では、役職のある人は役職の列(歴代)に出す
+      const hit = affs.sort(byYear)[0];
+      if (hit) members.push({ person: p, startYear: hit.startYear, endYear: hit.endYear, vassal });
+      return;
+    }
+    // その年に役職に就いていれば役職の列に出るので、ここでは出さない
+    if (orgRolesOfP.some((r) => activeAt(r, p))) return;
+    if (!personRelevantAtYear(p, year)) return; // まだ生まれていない・すでに亡くなっている人は出さない
+    const past = orgRolesOfP.filter((r) => r.endYear != null && r.endYear < year).sort((a, b) => a.endYear - b.endYear).pop();
+    const note = past ? `元${past.role}` : '';
     const hit = affs.filter((a) => activeAt(a, p)).sort(byYear)[0];
-    if (hit) members.push({ person: p, startYear: hit.startYear, endYear: hit.endYear, vassal: affs.some((a) => a.vassal) });
+    if (hit) { members.push({ person: p, startYear: hit.startYear, endYear: hit.endYear, vassal, note }); return; }
+    // 役職を退いた後も、亡くなるまではその組織の一員として「所属」の列に出す(隠居した元当主など)
+    if (past) members.push({ person: p, startYear: past.endYear, endYear: null, vassal, note });
   });
 
   // 時点の選択肢: 役職・所属・爵位に出てくる年の最小〜最大
@@ -1332,7 +1346,7 @@ function renderOrgChart() {
     let y = itemY0;
     c.items.forEach((it, k) => {
       line(cx, k === 0 ? headY + H : y - GAP_Y, cx, y);
-      box(x, y, it.person.name, formatRolePeriod(it, it.person), { personId: it.person.id, fill: '#ece8f6', stroke: '#d8d0ef', color: '#1c1530', subColor: '#8a84a0', h: itemH(it) });
+      box(x, y, it.person.name, it.note || formatRolePeriod(it, it.person), { personId: it.person.id, fill: '#ece8f6', stroke: '#d8d0ef', color: '#1c1530', subColor: '#8a84a0', h: itemH(it) });
       if (it.house) {
         const t = svgEl('text', { x: cx, y: y + 51, 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 700, fill: '#5b37b7', 'data-chart-org': it.house, style: 'cursor:pointer; text-decoration: underline' });
         t.textContent = `${it.house.length > 8 ? it.house.slice(0, 8) + '…' : it.house} ›`;
@@ -2832,6 +2846,15 @@ function activePeriodItems(list, key, year) {
   return (list || []).filter((r) => (r.startYear ?? -Infinity) <= year && (r.endYear ?? Infinity) >= year).map((r) => r[key]);
 }
 
+// その年に所属している組織。所属の期間に加えて、組織の役職を退いた後(隠居など)も亡くなるまでは所属しているものとして扱う
+function activeAffiliationsAt(p, year) {
+  const names = new Set(activePeriodItems(p.affiliations, 'affiliation', year));
+  (p.roles || []).forEach((r) => {
+    if (r.organization && (r.startYear ?? -Infinity) <= year) names.add(r.organization);
+  });
+  return [...names];
+}
+
 // 人物詳細の「年代で見る」: 生年を起点に、役職・所属・参加した出来事から分かる最後の年までをプルダウンの範囲にする
 function personYearRange(p) {
   const min = p.birthYear ?? 0;
@@ -2889,7 +2912,7 @@ function renderPersonYearResult(p, yearVal) {
   personYearLast.set(p.id, year);
   const age = personAgeAt(p, year);
   const activeRoles = activePeriodItems(p.roles, 'role', year);
-  const activeAffiliations = activePeriodItems(p.affiliations, 'affiliation', year);
+  const activeAffiliations = activeAffiliationsAt(p, year);
   const activeQualifications = activePeriodItems(p.qualifications, 'qualification', year);
   const earnedMedals = (p.medals || []).filter((m) => m.startYear != null && m.startYear <= year)
     .map((m) => m.rank ? `${m.medal}(${m.rank})` : m.medal);
@@ -2939,7 +2962,7 @@ function renderYearLookup() {
   peopleListEl.innerHTML = relevant.length ? relevant.map((p) => {
     const age = personAgeAt(p, year);
     const activeRoles = activePeriodItems(p.roles, 'role', year);
-    const activeAffiliations = activePeriodItems(p.affiliations, 'affiliation', year);
+    const activeAffiliations = activeAffiliationsAt(p, year);
     const subParts = [age !== null ? `${age}歳` : '', activeRoles.join('・'), activeAffiliations.join('・')].filter(Boolean);
     return `<li class="list-item" data-person-id="${p.id}">
       <div class="list-item-main">
@@ -3154,9 +3177,10 @@ function wireLists() {
       if (!p) continue;
       const rs = yearOf(r.startYear), re = yearOf(r.endYear);
       p.roles = [...(p.roles || []), { role: r.role.trim(), category: r.category || '', startYear: rs, endYear: re, organization: affiliation }].sort(byYear);
-      // 役職に就いた人がこの組織に所属していなければ、役職の期間で所属も付ける
+      // 役職に就いた人がこの組織に所属していなければ、就任の年から所属も付ける。
+      // 役職を退いても組織を離れるとは限らない(隠居など)ので、所属の終わりは空(亡くなるまで)にする
       if (!(p.affiliations || []).some((a) => a.affiliation === affiliation)) {
-        p.affiliations = [...(p.affiliations || []), { affiliation, startYear: rs ?? startYear, endYear: re, ...(bulkOrgVassalRoles.includes(r.role.trim()) ? { vassal: true } : {}) }];
+        p.affiliations = [...(p.affiliations || []), { affiliation, startYear: rs ?? startYear, endYear: null, ...(bulkOrgVassalRoles.includes(r.role.trim()) ? { vassal: true } : {}) }];
       }
     }
     for (const p of changed.values()) {
