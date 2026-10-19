@@ -70,9 +70,9 @@ function kyonenOf(p) {
 }
 
 function formatPersonYears(p) {
-  if (!p.birthYear && !p.deathYear) return '';
+  if (p.birthYear == null && p.deathYear == null) return '';
   const kyonen = kyonenOf(p);
-  return `${p.birthYear ?? '?'}年〜${p.deathYear ?? ''}${p.deathYear ? '年' : ''}${kyonen != null ? `(享年${kyonen})` : ''}`;
+  return `${p.birthYear ?? '?'}年〜${p.deathYear != null ? `${p.deathYear}年` : ''}${kyonen != null ? `(享年${kyonen})` : ''}`;
 }
 
 // 陣営の推移を「東軍(1590年) → 西軍(1600年)」のように矢印で繋げて表示する(所属年の昇順)
@@ -697,7 +697,7 @@ function renderSearch() {
 function personListItemHtml(p, section = null) {
   const dead = isPersonDead(p);
   const years = formatPersonYears(p);
-  const roleNames = (p.roles || []).map((r) => r.role).filter(Boolean).join('・');
+  const roleNames = [...new Set((p.roles || []).map((r) => r.role).filter(Boolean))].join('・'); // 同じ役職に何度就いても1回だけ出す
   const subParts = [roleNames, years || '生没年未設定'].filter(Boolean);
   return `<li class="list-item" data-person-id="${p.id}"${section != null ? ` data-section="${escapeHtml(section)}"` : ''}>
     <div class="list-item-main">
@@ -958,9 +958,20 @@ function renderPersonDetail() {
       const isDead = part.status === '死亡';
       const age = personAgeAt(p, ev.year);
       // この出来事の他の参加者から見て、この人物が「討ち取った相手」に指定されていれば、誰にやられたかを表示する
-      const killedByNames = (ev.participants || []).filter((other) => killedIdsOf(other).includes(p.id))
-        .map((other) => personById(other.personId)).filter(Boolean).map((o) => o.name);
-      const desc = [killedByNames.length ? `${killedByNames.join('・')}に討ち取られた` : '', part.note || ev.description || ''].filter(Boolean).join(' ・ ');
+      const namesOf = (ids) => ids.map((id) => personById(id)).filter(Boolean).map((o) => o.name);
+      const byOthers = (idsOf) => namesOf((ev.participants || []).filter((other) => idsOf(other).includes(p.id)).map((other) => other.personId));
+      const killedByNames = byOthers(killedIdsOf);
+      const injuredByNames = byOthers(injuredIdsOf);
+      const killedNames = namesOf(killedIdsOf(part));
+      const injuredNames = namesOf(injuredIdsOf(part));
+      // 出来事詳細の参加者欄と同じく、誰を討ち取った/誰にやられたかを年表にも出す
+      const desc = [
+        killedNames.length ? `${killedNames.join('・')}を討ち取った` : '',
+        injuredNames.length ? `${injuredNames.join('・')}を負傷させた` : '',
+        killedByNames.length ? `${killedByNames.join('・')}に討ち取られた` : '',
+        injuredByNames.length ? `${injuredByNames.join('・')}に負傷させられた` : '',
+        part.note || ev.description || '',
+      ].filter(Boolean).join(' ・ ');
       return `<li class="timeline-item ${isDead ? 'is-dead' : ''}" data-event-id="${ev.id}">
         <div class="timeline-year" data-year="${ev.year}">${formatEventTime(ev)}${age !== null ? `(${age}歳)` : ''}</div>
         <div class="timeline-body">
@@ -982,10 +993,19 @@ function eventListItemHtml(ev, indent) {
   return `<li class="list-item ${indent ? 'list-item-indent' : ''}" data-event-id="${ev.id}">
     <div class="list-item-main">
       <div class="list-item-title">${indent ? '↳ ' : ''}${escapeHtml(ev.title)} <span class="badge">${escapeHtml(category)}</span></div>
-      <div class="list-item-sub">${formatEventTime(ev)} ・ 参加者${(ev.participants || []).length}人</div>
+      <div class="list-item-sub">${formatEventTime(ev)} ・ ${participantCountText(ev)}</div>
     </div>
     <span class="list-item-chevron">›</span>
   </li>`;
+}
+
+// 「参加者10人(死亡2・負傷3)」のように、生死の内訳も一覧で分かるようにする
+function participantCountText(ev) {
+  const parts = ev.participants || [];
+  const dead = parts.filter((p) => p.status === '死亡').length;
+  const injured = parts.filter((p) => p.status === '負傷').length;
+  const detail = [dead ? `死亡${dead}` : '', injured ? `負傷${injured}` : ''].filter(Boolean).join('・');
+  return `参加者${parts.length}人${detail ? `(${detail})` : ''}`;
 }
 
 let eventsCategoryFilter = '';
@@ -1098,7 +1118,7 @@ function renderEventDetail() {
   document.getElementById('event-children-list').innerHTML = children.map((c) => `<li class="list-item" data-event-id="${c.id}">
       <div class="list-item-main">
         <div class="list-item-title">${escapeHtml(c.title)}</div>
-        <div class="list-item-sub">${formatEventTime(c)} ・ 参加者${(c.participants || []).length}人</div>
+        <div class="list-item-sub">${formatEventTime(c)} ・ ${participantCountText(c)}</div>
       </div>
       <span class="list-item-chevron">›</span>
     </li>`).join('');
@@ -1863,8 +1883,13 @@ async function syncSpouseLinks(personId, oldIds, newIds) {
 }
 
 async function deletePerson(id) {
-  for (const ev of events.filter((e) => (e.participants || []).some((p) => p.personId === id))) {
+  for (const ev of events.filter((e) => (e.participants || []).some((p) => p.personId === id || killedIdsOf(p).includes(id) || injuredIdsOf(p).includes(id)))) {
     ev.participants = ev.participants.filter((p) => p.personId !== id);
+    // 消した人物を「討ち取った/負傷させた相手」に入れている参加者からも外す
+    ev.participants.forEach((p) => {
+      p.killedPersonIds = killedIdsOf(p).filter((x) => x !== id);
+      p.injuredPersonIds = injuredIdsOf(p).filter((x) => x !== id);
+    });
     if (ev.participants.length === 0) await DB.deleteEvent(ev.id); // 参加者がいなくなる出来事(概要由来など)は残さない
     else await DB.updateEvent(ev);
   }
@@ -1937,6 +1962,42 @@ async function syncStrengthFromParticipants(ev) {
   }
 }
 
+// 出来事の年を変えた・参加者の生死やティアを変えた・参加者を外した・出来事を消した時に、
+// 前の内容から人物側へ自動で入れた値(没年・陣営・強さ)が古いまま残らないように取り消す。
+// 取り消すのは「前の出来事の年・値と完全に一致し、ほかの出来事からは同じ値が出てこない」ものだけ(手入力した値は極力残す)
+async function undoAutoSyncedData(oldEv, newEv) {
+  if (!oldEv) return;
+  const oldYear = oldEv.year;
+  const yearChanged = !newEv || newEv.year !== oldYear;
+  const others = events.filter((e) => e.id !== oldEv.id);
+  for (const oldPart of oldEv.participants || []) {
+    const person = personById(oldPart.personId);
+    if (!person) continue;
+    const newPart = newEv ? (newEv.participants || []).find((p) => p.personId === oldPart.personId) : null;
+    const otherParts = others.filter((e) => e.year === oldYear)
+      .map((e) => (e.participants || []).find((p) => p.personId === person.id)).filter(Boolean);
+    let changed = false;
+    if (oldPart.status === '死亡' && person.deathYear === oldYear && (yearChanged || !newPart || newPart.status !== '死亡')
+      && !otherParts.some((p) => p.status === '死亡')) {
+      person.deathYear = null; changed = true;
+    }
+    const oldFaction = (oldPart.faction || '').trim();
+    if (oldFaction && (yearChanged || !newPart || (newPart.faction || '').trim() !== oldFaction)
+      && !otherParts.some((p) => (p.faction || '').trim() === oldFaction)) {
+      const before = (person.factions || []).length;
+      person.factions = (person.factions || []).filter((f) => !(f.faction === oldFaction && f.startYear === oldYear));
+      if (person.factions.length !== before) changed = true;
+    }
+    if (oldPart.tier && (yearChanged || !newPart || !newPart.tier) && !otherParts.some((p) => p.tier)) {
+      const oldScore = oldPart.score != null && oldPart.score !== '' ? Number(oldPart.score) : null;
+      const before = (person.strength || []).length;
+      person.strength = (person.strength || []).filter((s) => !(s.startYear === oldYear && s.tier === oldPart.tier && (s.score ?? null) === oldScore));
+      if (person.strength.length !== before) changed = true;
+    }
+    if (changed) await DB.updatePerson(person);
+  }
+}
+
 // 子出来事の参加者は、親出来事にも自動で参加者として追加する(まだ参加していない人のみ)。
 // 既に親出来事にも参加している場合、子出来事で死亡していれば親出来事側も死亡に更新する(回復はさせない)
 async function syncParticipantsToParentEvent(ev) {
@@ -1976,6 +2037,7 @@ async function saveEventForm() {
   const description = document.getElementById('event-form-description').value.trim();
   if (editingEventId) {
     const ev = eventById(editingEventId);
+    await undoAutoSyncedData(JSON.parse(JSON.stringify(ev)), { year, participants: draftParticipants });
     ev.title = title; ev.category = category; ev.year = year; ev.month = month; ev.endYear = endYear; ev.endMonth = endMonth;
     ev.description = description; ev.participants = draftParticipants;
     await DB.updateEvent(ev);
@@ -2003,6 +2065,7 @@ async function deleteEvent(id) {
     child.parentEventId = null;
     await DB.updateEvent(child);
   }
+  await undoAutoSyncedData(eventById(id), null);
   await DB.deleteEvent(id);
   await refreshAll();
   navStack = navStack.filter((v) => v !== 'view-event-detail');
@@ -2058,6 +2121,7 @@ function createEventFromMemo() {
   eventFormParentId = null;
   document.getElementById('event-form-parent-note').textContent = '';
   document.getElementById('event-form-title').value = '';
+  document.getElementById('event-form-category').value = '出来事'; // 前に開いた出来事の分類が残らないように
   document.getElementById('event-form-year').value = '';
   document.getElementById('event-form-month').value = '';
   document.getElementById('event-form-end-year').value = '';
@@ -2461,17 +2525,21 @@ function renderPersonYearView() {
   if (!p) { goBack(); return; }
   document.getElementById('person-year-view-title').textContent = `${p.name}の年代`;
   renderPersonYearSelect(p);
-  if (personYearPreset != null) {
-    document.getElementById('person-year-select').value = String(personYearPreset);
-    renderPersonYearResult(p, personYearPreset);
-    personYearPreset = null;
+  // 年をタップして開いた時はその年、出来事を見て戻ってきた時は前に選んでいた年を出す
+  const year = personYearPreset != null ? personYearPreset : personYearLast.get(p.id);
+  personYearPreset = null;
+  if (year != null && year !== '') {
+    document.getElementById('person-year-select').value = String(year);
+    renderPersonYearResult(p, year);
   }
 }
+const personYearLast = new Map(); // 人物ごとに最後に選んだ年(画面を戻った時に選び直さなくて済むように)
 
 function renderPersonYearResult(p, yearVal) {
   const resultEl = document.getElementById('person-year-result');
-  if (yearVal === '' || yearVal == null) { resultEl.innerHTML = ''; return; }
+  if (yearVal === '' || yearVal == null) { resultEl.innerHTML = ''; personYearLast.delete(p.id); return; }
   const year = Number(yearVal);
+  personYearLast.set(p.id, year);
   const age = personAgeAt(p, year);
   const activeRoles = activePeriodItems(p.roles, 'role', year);
   const activeAffiliations = activePeriodItems(p.affiliations, 'affiliation', year);
@@ -2520,7 +2588,7 @@ function renderYearLookup() {
   }
 
   const relevant = people.filter((p) => personRelevantAtYear(p, year))
-    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
+    .sort((a, b) => (a.kana || a.name || '').localeCompare(b.kana || b.name || '', 'ja')); // 人物一覧と同じく読み優先
   peopleListEl.innerHTML = relevant.length ? relevant.map((p) => {
     const age = personAgeAt(p, year);
     const activeRoles = activePeriodItems(p.roles, 'role', year);
@@ -2764,6 +2832,27 @@ function wireDetailActions() {
   document.getElementById('event-delete-btn').addEventListener('click', () => askConfirm(() => deleteEvent(currentEventId)));
   document.getElementById('event-map-btn').addEventListener('click', () => { mapEditingEventId = currentEventId; navigateTo('view-event-map-editor'); });
   document.getElementById('event-add-child-btn').addEventListener('click', () => openEventForm(null, currentEventId));
+  // 同じ顔ぶれで続く戦いなどを作りやすいように、参加者と陣営だけ引き継いだ新しい出来事を作る(生死・討ち取り・ティア・配置は引き継がない)
+  document.getElementById('event-duplicate-btn').addEventListener('click', () => {
+    const src = eventById(currentEventId);
+    if (!src) return;
+    openEventForm(null, src.parentEventId ?? null);
+    document.getElementById('event-form-title').value = src.title;
+    document.getElementById('event-form-category').value = src.category || '出来事';
+    document.getElementById('event-form-year').value = src.year ?? '';
+    draftParticipants = (src.participants || []).filter((p) => p.status !== '死亡') // その出来事で死亡した人は続きに出られないので外す
+      .map((p) => ({ personId: p.personId, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [], faction: p.faction || '' }));
+    renderEventFormParticipants();
+    formDirty = true;
+  });
+  // 人物の画面から、その人物が参加者に入った状態で新しい出来事を作る
+  document.getElementById('person-add-event-btn').addEventListener('click', () => {
+    const p = personById(currentPersonId);
+    if (!p) return;
+    openEventForm(null);
+    draftParticipants = [{ personId: p.id, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [], faction: currentFactionOf(p) }];
+    renderEventFormParticipants();
+  });
   document.getElementById('person-tree-btn').addEventListener('click', () => { familyTreeFocusId = currentPersonId; navigateTo('view-family-tree'); });
   document.getElementById('person-year-btn').addEventListener('click', () => openPersonYearView(currentPersonId));
   document.getElementById('tree-edit-btn').addEventListener('click', () => openPersonForm(familyTreeFocusId));

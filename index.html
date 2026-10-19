@@ -73,6 +73,7 @@
     <div class="detail-actions">
       <button class="btn-secondary" id="person-tree-btn">家系図を見る</button>
       <button class="btn-secondary" id="person-year-btn">年代で見る</button>
+      <button class="btn-secondary" id="person-add-event-btn">この人物で出来事を追加</button>
     </div>
     <div class="section-label">役職</div>
     <ul id="person-roles-timeline" class="timeline"></ul>
@@ -118,7 +119,10 @@
       <div class="detail-sub" id="event-year"></div>
       <div class="detail-sub" id="event-description"></div>
     </div>
-    <div class="detail-actions"><button class="btn-secondary" id="event-map-btn">布陣図を編集</button></div>
+    <div class="detail-actions">
+      <button class="btn-secondary" id="event-map-btn">布陣図を編集</button>
+      <button class="btn-secondary" id="event-duplicate-btn">同じ参加者で新しく作る</button>
+    </div>
     <div class="section-label" id="event-map-label" style="display:none;">布陣図</div>
     <div class="map-canvas-wrap" id="event-map-preview-wrap" style="display:none;">
       <svg id="event-map-preview" class="map-canvas" viewBox="0 0 400 300"></svg>

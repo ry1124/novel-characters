@@ -160,7 +160,8 @@ html, body {
 .detail-header { padding: 4px 16px 10px; }
 .detail-header h2 { margin: 4px 0 2px; font-size: 22px; }
 .detail-header .detail-sub { color: var(--text-dim); font-size: 13px; }
-.detail-actions { display: flex; gap: 10px; padding: 8px 16px 4px; }
+.detail-actions { display: flex; flex-wrap: wrap; gap: 10px; padding: 8px 16px 4px; }
+.detail-actions > button { flex: 1 1 40%; }
 
 .chip-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 14px; background: var(--surface2); color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer; margin: 4px 4px 0 0; }
 
