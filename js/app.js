@@ -29,8 +29,15 @@ const DIRTY_TRACKED_VIEWS = ['view-edit-person', 'view-edit-event'];
 const STATUS_LIST = ['生存', '死亡', '負傷', '不明'];
 const STATUS_CLASS = { 生存: 'alive', 死亡: 'dead', 負傷: 'injured', 不明: 'unknown' };
 const ROLE_CATEGORIES = ['軍部', '国', '家']; // 役職の分類(固定の3種、未設定もありえる)
-const STRENGTH_TIERS = ['S', 'A', 'B', 'C']; // 強さのティア(強い順)
-const STRENGTH_TIER_RANK = { S: 4, A: 3, B: 2, C: 1 }; // ソート用の数値(大きいほど強い)
+// 強さのティア(強い順)。基準はS/A/B/Cの4つで共通、+/-は同ランク内の上位・下位
+const STRENGTH_TIERS = ['S+', 'S', 'S-', 'A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-'];
+const STRENGTH_TIER_RANGES = {
+  'S+': '97〜100', S: '93〜96', 'S-': '90〜92',
+  'A+': '83〜89', A: '76〜82', 'A-': '70〜75',
+  'B+': '63〜69', B: '56〜62', 'B-': '50〜55',
+  'C+': '33〜49', C: '17〜32', 'C-': '0〜16',
+};
+const STRENGTH_TIER_RANK = Object.fromEntries(STRENGTH_TIERS.map((t, i) => [t, STRENGTH_TIERS.length - i])); // 大きいほど強い
 
 // 討ち取った相手・負傷させた相手は複数人対応(killedPersonIds/injuredPersonIds)。
 // 旧バージョン(1人のみ、killedPersonId/injuredPersonId)で保存済みのデータも読めるようにフォールバックする
@@ -304,7 +311,7 @@ let strengthRowSeq = 0;
 function nextStrengthRowId() { return 'strength' + (strengthRowSeq++); }
 
 function strengthTierOptionsHtml(selected) {
-  return STRENGTH_TIERS.map((t) => `<option value="${t}" ${selected === t ? 'selected' : ''}>${t}</option>`).join('');
+  return STRENGTH_TIERS.map((t) => `<option value="${t}" ${selected === t ? 'selected' : ''}>${t}(${STRENGTH_TIER_RANGES[t]})</option>`).join('');
 }
 
 function renderStrengthList() {
@@ -608,7 +615,7 @@ function openPersonForm(id) {
   document.getElementById('person-faction-add-start').value = '';
   document.getElementById('person-faction-add-name').value = '';
   document.getElementById('person-strength-add-start').value = '';
-  document.getElementById('person-strength-add-tier').value = 'C';
+  document.getElementById('person-strength-add-tier').innerHTML = strengthTierOptionsHtml('C');
   document.getElementById('person-strength-add-score').value = '';
   document.getElementById('person-skill-add-name').value = '';
   document.getElementById('person-skill-add-description').value = '';

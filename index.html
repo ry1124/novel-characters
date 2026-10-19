@@ -294,19 +294,20 @@
       </div>
       <button class="btn-secondary" id="person-faction-add-btn" type="button">+ 陣営を追加</button>
       <div class="section-label" style="padding-left:0;">強さ(複数可、成長する場合は年代順に登録)</div>
-      <div class="form-note">ティア(S/A/B/C)+点数(任意)で記録し、詳細画面では矢印で推移を表示します。人物一覧で最新・最高の強さ順に並び替えできます</div>
+      <div class="form-note tier-table">
+        <div><b>S(90〜100)</b>: 単騎で戦局そのものを変える。歴史に名を残す英雄・怪物級</div>
+        <div><b>A(70〜89)</b>: 大軍を率いて局地的な勝敗を決められる、一軍の将格</div>
+        <div><b>B(50〜69)</b>: 戦場で確実に戦果を挙げる精兵・隊長格</div>
+        <div><b>C(0〜49)</b>: 一般兵卒〜小隊長級。まだ名の知られていない者</div>
+        <div>各ランクは「+」(上位)・無印(中位)・「-」(下位)の3段階に細分化(例: A+ / A / A-)。点数はさらに細かい微調整用(任意)。詳細画面では矢印で推移を表示し、人物一覧で最新・最高の強さ順に並び替えできます</div>
+      </div>
       <ul id="person-strength-list" class="list" style="padding:0;"></ul>
       <div class="form-row">
         <label>強さを追加</label>
         <div class="event-time-row">
           <input id="person-strength-add-start" type="number" min="0" max="3000" placeholder="年">
-          <select id="person-strength-add-tier">
-            <option value="S">S</option>
-            <option value="A">A</option>
-            <option value="B">B</option>
-            <option value="C" selected>C</option>
-          </select>
-          <input id="person-strength-add-score" type="number" placeholder="点数(任意)">
+          <select id="person-strength-add-tier"></select>
+          <input id="person-strength-add-score" type="number" min="0" max="100" placeholder="点数(任意)">
         </div>
       </div>
       <button class="btn-secondary" id="person-strength-add-btn" type="button">+ 強さを追加</button>
