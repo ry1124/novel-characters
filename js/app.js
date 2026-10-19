@@ -1025,6 +1025,7 @@ function renderEventDetail() {
       .map((other) => pm.get(other.personId)).filter(Boolean).map((o) => o.name);
     const subParts = [
       age !== null ? `${age}歳` : '',
+      p.tier ? `ティア${p.tier}${p.score != null && p.score !== '' ? ` ${p.score}` : ''}` : '',
       killedNames.length ? `${killedNames.join('・')}を討ち取った` : '',
       injuredNames.length ? `${injuredNames.join('・')}を負傷させた` : '',
       killedByNames.length ? `${killedByNames.join('・')}に討ち取られた` : '',
@@ -1054,6 +1055,25 @@ function renderEventDetail() {
   } else {
     listEl.innerHTML = participants.map(participantItemHtml).join('');
   }
+
+  // この戦いの時点のティア表: ティアを付けた参加者を強い順に、ティアごとの見出しで並べる
+  const tiered = participants.filter((p) => p.tier)
+    .sort((a, b) => strengthRankValue(b) - strengthRankValue(a));
+  document.getElementById('event-tier-label').style.display = tiered.length ? '' : 'none';
+  let lastTier = null;
+  document.getElementById('event-tier-table').innerHTML = tiered.map((p) => {
+    const person = pm.get(p.personId);
+    const header = p.tier !== lastTier ? `<li class="list-group-header">${escapeHtml(p.tier)}</li>` : '';
+    lastTier = p.tier;
+    const faction = (p.faction || '').trim();
+    return `${header}<li class="list-item list-item-indent" data-person-id="${p.personId}">
+      <div class="list-item-main">
+        <div class="list-item-title">${escapeHtml(person ? person.name : '(不明な人物)')}</div>
+        <div class="list-item-sub">${escapeHtml([p.score != null && p.score !== '' ? `${p.score}点` : '', faction].filter(Boolean).join(' ・ '))}</div>
+      </div>
+      <span class="list-item-chevron">›</span>
+    </li>`;
+  }).join('');
 
   const wrap = document.getElementById('event-map-preview-wrap');
   const svg = document.getElementById('event-map-preview');
@@ -1225,6 +1245,10 @@ function renderEventFormParticipants() {
       </div>
       <div class="participant-row-bottom">
         <input class="pf-faction" type="text" placeholder="陣営(例: 東軍)" value="${escapeHtml(p.faction || '')}" list="event-faction-datalist">
+      </div>
+      <div class="participant-row-bottom">
+        <select class="pf-tier"><option value="">ティア-</option>${strengthTierOptionsHtml(p.tier)}</select>
+        <input class="pf-score" type="number" min="0" max="100" placeholder="点数(任意)" value="${p.score ?? ''}">
       </div>
       <div class="participant-row-bottom">
         <select class="pf-kill">${killOptions}</select>
@@ -1841,6 +1865,28 @@ async function syncFactionsFromParticipants(ev) {
   }
 }
 
+// 出来事で付けたティアを、人物の強さの履歴(strength)にその年の値として反映する。
+// 同じ年の記録があれば上書き(戦いのティアを直したら人物側も直る)、無ければ追加する
+async function syncStrengthFromParticipants(ev) {
+  for (const part of ev.participants || []) {
+    if (!part.tier) continue;
+    const person = personById(part.personId);
+    if (!person) continue;
+    const score = part.score != null && part.score !== '' ? Number(part.score) : null;
+    const list = (person.strength || []).slice();
+    const same = list.find((s) => s.startYear === ev.year);
+    if (same) {
+      if (same.tier === part.tier && (same.score ?? null) === score) continue;
+      same.tier = part.tier;
+      same.score = score;
+    } else {
+      list.push({ tier: part.tier, score, startYear: ev.year });
+    }
+    person.strength = list.sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+    await DB.updatePerson(person);
+  }
+}
+
 // 子出来事の参加者は、親出来事にも自動で参加者として追加する(まだ参加していない人のみ)。
 // 既に親出来事にも参加している場合、子出来事で死亡していれば親出来事側も死亡に更新する(回復はさせない)
 async function syncParticipantsToParentEvent(ev) {
@@ -1886,12 +1932,14 @@ async function saveEventForm() {
     currentEventId = ev.id;
     await syncDeathYearsFromParticipants(ev);
     await syncFactionsFromParticipants(ev);
+    await syncStrengthFromParticipants(ev);
     await syncParticipantsToParentEvent(ev);
   } else {
     const id = await DB.addEvent({ title, category, year, month, endYear, endMonth, description, terrainMap: null, participants: draftParticipants, parentEventId: eventFormParentId });
     currentEventId = id;
     await syncDeathYearsFromParticipants({ year, participants: draftParticipants });
     await syncFactionsFromParticipants({ year, participants: draftParticipants });
+    await syncStrengthFromParticipants({ year, participants: draftParticipants });
     await syncParticipantsToParentEvent({ parentEventId: eventFormParentId, participants: draftParticipants });
   }
   await refreshAll();
@@ -2520,6 +2568,7 @@ function wireLists() {
   delegate('search-results', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
   delegate('people-list', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
   delegate('event-participants', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
+  delegate('event-tier-table', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
   delegate('events-list', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
   delegate('event-children-list', '[data-event-id]', (el) => openEventDetail(Number(el.dataset.eventId)));
   // 経歴年表は、年の部分をタップした時だけ「年代で見る」を開く(それ以外=出来事名部分は出来事詳細を開く)
@@ -2725,6 +2774,8 @@ function wireForms() {
     if (!draft) return;
     if (e.target.classList.contains('pf-status')) {
       draft.status = e.target.value;
+    } else if (e.target.classList.contains('pf-tier')) {
+      draft.tier = e.target.value;
     }
   });
   participantsList.addEventListener('input', (e) => {
@@ -2735,6 +2786,7 @@ function wireForms() {
     if (!draft) return;
     if (e.target.classList.contains('pf-note')) draft.note = e.target.value;
     else if (e.target.classList.contains('pf-faction')) draft.faction = e.target.value;
+    else if (e.target.classList.contains('pf-score')) draft.score = e.target.value;
   });
   participantsList.addEventListener('click', (e) => {
     const removeBtn = e.target.closest('[data-remove]');

@@ -126,6 +126,8 @@
     </div>
     <div class="section-label">参加者</div>
     <ul id="event-participants" class="list"></ul>
+    <div class="section-label" id="event-tier-label" style="display:none;">ティア表</div>
+    <ul id="event-tier-table" class="list"></ul>
     <div class="detail-actions"><button class="btn-secondary" id="event-add-child-btn">子出来事を追加</button></div>
     <div class="section-label">子出来事</div>
     <ul id="event-children-list" class="list"></ul>
@@ -294,13 +296,7 @@
       </div>
       <button class="btn-secondary" id="person-faction-add-btn" type="button">+ 陣営を追加</button>
       <div class="section-label" style="padding-left:0;">強さ(複数可、成長する場合は年代順に登録)</div>
-      <div class="form-note tier-table">
-        <div><b>S(90〜100)</b>: 単騎で戦局そのものを変える。歴史に名を残す英雄・怪物級</div>
-        <div><b>A(70〜89)</b>: 大軍を率いて局地的な勝敗を決められる、一軍の将格</div>
-        <div><b>B(50〜69)</b>: 戦場で確実に戦果を挙げる精兵・隊長格</div>
-        <div><b>C(0〜49)</b>: 一般兵卒〜小隊長級。まだ名の知られていない者</div>
-        <div>各ランクは「+」(上位)・無印(中位)・「-」(下位)の3段階に細分化(例: A+ / A / A-)。点数はさらに細かい微調整用(任意)。詳細画面では矢印で推移を表示し、人物一覧で最新・最高の強さ順に並び替えできます</div>
-      </div>
+      <div class="form-note">S+〜C-の12段階+点数(任意)。戦いの出来事で参加者に付けたティアは、その年の強さとして自動でここに入ります</div>
       <ul id="person-strength-list" class="list" style="padding:0;"></ul>
       <div class="form-row">
         <label>強さを追加</label>
