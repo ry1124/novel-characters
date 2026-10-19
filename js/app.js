@@ -1402,11 +1402,16 @@ function renderBulkOrgMemberList() {
     return `<li class="participant-row summary-row org-member-row" data-row-id="${row.rowId}">
       <input class="om-start" type="number" min="0" max="3000" value="${row.startYear ?? ''}" placeholder="開始">
       <input class="om-end" type="number" min="0" max="3000" value="${row.endYear ?? ''}" placeholder="終了">
-      <div class="list-item-main">${escapeHtml(person ? person.name : '?')}</div>
+      <div class="list-item-main">${person ? personNameWithBirthHtml(person) : '?'}</div>
       <button type="button" class="remove-btn" data-remove-org-member="${row.rowId}">×</button>
     </li>`;
   }).join('');
   document.getElementById('bulk-org-member-empty').classList.toggle('hidden', bulkOrgMemberRows.length > 0);
+}
+
+// 同名・似た名前の人物を見分けやすいように、名前の横に生年を小さく添える(生年未設定なら名前だけ)
+function personNameWithBirthHtml(p) {
+  return `${escapeHtml(p.name)}${p.birthYear != null ? ` <span class="name-birth">${p.birthYear}年生</span>` : ''}`;
 }
 
 // 組織内の役職(年代ごと): {rowId, startYear, endYear, role, category, personId}
@@ -1424,7 +1429,7 @@ function renderBulkOrgRoleList() {
         <button type="button" class="remove-btn" data-remove-org-role="${row.rowId}">×</button>
       </div>
       <div class="participant-row-bottom">
-        <button type="button" class="picker-btn ob-person${person ? '' : ' is-placeholder'}">${person ? escapeHtml(person.name) : '就いた人物を選ぶ'}</button>
+        <button type="button" class="picker-btn ob-person${person ? '' : ' is-placeholder'}">${person ? personNameWithBirthHtml(person) : '就いた人物を選ぶ'}</button>
       </div>
     </li>`;
   }).join('');
@@ -1436,7 +1441,7 @@ function renderBulkAffiliationPersonList() {
   const sorted = filtered.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
   listEl.innerHTML = sorted.map((p) => `<li class="list-item list-item-check" data-person-id="${p.id}">
       <input type="checkbox" class="bulk-affiliation-check" data-person-id="${p.id}" ${bulkAffiliationCheckedIds.has(p.id) ? 'checked' : ''}>
-      <div class="list-item-main"><div class="list-item-title">${escapeHtml(p.name)}</div></div>
+      <div class="list-item-main"><div class="list-item-title">${personNameWithBirthHtml(p)}</div></div>
     </li>`).join('');
 }
 
@@ -1809,7 +1814,7 @@ function renderPersonPickerList(query) {
     .filter((p) => !q || [p.name, p.kana, p.youmei, p.maidenName].filter(Boolean).some((s) => s.includes(q)))
     .slice().sort((a, b) => (a.kana || a.name || '').localeCompare(b.kana || b.name || '', 'ja'));
   document.getElementById('person-picker-list').innerHTML = list.length
-    ? list.map((p) => `<button type="button" class="sheet-btn" data-picker-person="${p.id}">${escapeHtml(p.name)}</button>`).join('')
+    ? list.map((p) => `<button type="button" class="sheet-btn" data-picker-person="${p.id}">${personNameWithBirthHtml(p)}</button>`).join('')
     : '<div class="person-picker-empty">該当する人物がいません</div>';
 }
 function closePersonPicker(result) {
