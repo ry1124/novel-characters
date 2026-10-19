@@ -1012,7 +1012,10 @@ function renderEventDetail() {
 
   const pm = peopleMapCache();
   const listEl = document.getElementById('event-participants');
-  const participants = ev.participants || [];
+  // 生存→負傷→不明→死亡の順に並べる(同じ生死の中は登録順のまま)
+  const STATUS_ORDER = { 生存: 0, 負傷: 1, 不明: 2, 死亡: 3 };
+  const statusRank = (p) => STATUS_ORDER[p.status] ?? 2;
+  const participants = (ev.participants || []).slice().sort((a, b) => statusRank(a) - statusRank(b));
   const participantItemHtml = (p) => {
     const person = pm.get(p.personId);
     const age = person ? personAgeAt(person, ev.year) : null;
