@@ -1321,11 +1321,19 @@ function renderOrgChart() {
   const totalW = groups.reduce((s, g) => s + groupW(g), 0) + Math.max(0, groups.length - 1) * GROUP_GAP;
   const width = Math.max(totalW + 40, 320);
   // 家臣の箱は、その人自身の家の名前を3行目に出すぶん背を高くする(タップでその家の組織図へ)
-  const H_HOUSE = 60;
   groups.forEach((g) => g.cols.forEach((c) => c.items.forEach((it) => {
     it.house = g.isVassal ? (vassalHousesOf(it.person, name)[0] || '') : '';
   })));
-  const itemH = (it) => (it.house ? H_HOUSE : H);
+  // 年齢: 年を選んだ時はその年、最新は物語の今(出来事の一番新しい年)、全期間は役職なら就任した時(それ以外は生年)
+  const presentYear = latest ? storyPresentYear() : null;
+  groups.forEach((g) => g.cols.forEach((c) => c.items.forEach((it) => {
+    const b = it.person.birthYear;
+    if (b == null) { it.age = ''; return; }
+    if (year != null) it.age = `${year - b}歳`;
+    else if (latest) it.age = presentYear != null ? `${presentYear - b}歳` : `${b}年生`;
+    else it.age = !c.isMembers && it.startYear != null ? `就任時${it.startYear - b}歳` : `${b}年生`;
+  })));
+  const itemH = (it) => (it.age ? 56 : H) + (it.house ? 14 : 0);
   const colHeight = (c) => c.items.reduce((s, it) => s + itemH(it) + GAP_Y, 0);
   const height = itemY0 + Math.max(H + GAP_Y, ...cols.map(colHeight)) + 10;
   const RATIO = 0.8;
@@ -1339,13 +1347,19 @@ function renderOrgChart() {
   const box = (x, y, title, sub, opt) => {
     const g = svgEl('g', opt.personId != null ? { 'data-chart-person': opt.personId, style: 'cursor:pointer' } : {});
     g.appendChild(svgEl('rect', { x, y, width: W, height: opt.h || H, rx: 8, fill: opt.fill, stroke: opt.stroke, 'stroke-width': 1.5 }));
-    const t = svgEl('text', { x: x + W / 2, y: y + (sub ? 19 : 28), 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 700, fill: opt.color });
+    const three = !!opt.sub2; // 3行(名前・期間・年齢)の時は詰めて並べる
+    const t = svgEl('text', { x: x + W / 2, y: y + (three ? 18 : sub ? 19 : 28), 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 700, fill: opt.color });
     t.textContent = title.length > 7 ? title.slice(0, 7) + '…' : title;
     g.appendChild(t);
     if (sub) {
-      const s = svgEl('text', { x: x + W / 2, y: y + 35, 'text-anchor': 'middle', 'font-size': 9, fill: opt.subColor });
+      const s = svgEl('text', { x: x + W / 2, y: y + (three ? 33 : 35), 'text-anchor': 'middle', 'font-size': 9, fill: opt.subColor });
       s.textContent = sub;
       g.appendChild(s);
+    }
+    if (three) {
+      const s2 = svgEl('text', { x: x + W / 2, y: y + 47, 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 600, fill: '#5b37b7' });
+      s2.textContent = opt.sub2;
+      g.appendChild(s2);
     }
     svg.appendChild(g);
   };
@@ -1367,9 +1381,9 @@ function renderOrgChart() {
     let y = itemY0;
     c.items.forEach((it, k) => {
       line(cx, k === 0 ? headY + H : y - GAP_Y, cx, y);
-      box(x, y, it.person.name, it.note || formatRolePeriod(it, it.person), { personId: it.person.id, fill: '#ece8f6', stroke: '#d8d0ef', color: '#1c1530', subColor: '#8a84a0', h: itemH(it) });
+      box(x, y, it.person.name, it.note || formatRolePeriod(it, it.person), { personId: it.person.id, fill: '#ece8f6', stroke: '#d8d0ef', color: '#1c1530', subColor: '#8a84a0', h: itemH(it), sub2: it.age });
       if (it.house) {
-        const t = svgEl('text', { x: cx, y: y + 51, 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 700, fill: '#5b37b7', 'data-chart-org': it.house, style: 'cursor:pointer; text-decoration: underline' });
+        const t = svgEl('text', { x: cx, y: y + (it.age ? 65 : 51), 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 700, fill: '#5b37b7', 'data-chart-org': it.house, style: 'cursor:pointer; text-decoration: underline' });
         t.textContent = `${it.house.length > 8 ? it.house.slice(0, 8) + '…' : it.house} ›`;
         svg.appendChild(t);
       }
@@ -1487,6 +1501,12 @@ function renderOrganizations() {
     const peerage = formatPeerageHistory(name);
     return `<li class="list-group-header org-header"><span>${escapeHtml(name)}(${entries.length}人)${peerage ? `<span class="org-peerage">${escapeHtml(peerage)}</span>` : ''}</span><span class="org-header-links"><span class="org-edit-link" data-org-chart="${escapeHtml(name)}">組織図</span><span class="org-edit-link" data-org-name="${escapeHtml(name)}">編集 ›</span></span></li>${rowsHtml}`;
   }).join('');
+}
+
+// 物語の「今」の年: 登録してある出来事の中で一番新しい年(終わりの年も含む)。出来事が無ければnull
+function storyPresentYear() {
+  const ys = events.flatMap((ev) => [ev.year, ev.endYear]).filter((y) => y != null);
+  return ys.length ? Math.max(...ys) : null;
 }
 
 // ===== 組織の並べ替え =====
