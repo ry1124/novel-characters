@@ -1428,7 +1428,7 @@ function renderOrganizations() {
   const hadAny = groups.size > 0;
   let names = [...groups.keys()];
   if (q) names = names.filter((n) => n.toLowerCase().includes(q));
-  names.sort((a, b) => a.localeCompare(b, 'ja'));
+  names.sort((a, b) => compareOrganizations(a, b, groups, orgRoles));
   const emptyEl = document.getElementById('organizations-empty');
   const listEl = document.getElementById('organizations-list');
   if (!names.length) {
@@ -1471,6 +1471,42 @@ function renderOrganizations() {
     const peerage = formatPeerageHistory(name);
     return `<li class="list-group-header org-header"><span>${escapeHtml(name)}(${entries.length}人)${peerage ? `<span class="org-peerage">${escapeHtml(peerage)}</span>` : ''}</span><span class="org-header-links"><span class="org-edit-link" data-org-chart="${escapeHtml(name)}">組織図</span><span class="org-edit-link" data-org-name="${escapeHtml(name)}">編集 ›</span></span></li>${rowsHtml}`;
   }).join('');
+}
+
+// ===== 組織の並べ替え =====
+let orgSortMode = 'name'; // 'name' | 'members' | 'peerage' | 'oldest'
+const PEERAGE_RANK = ['公爵', '侯爵', '伯爵', '子爵', '男爵']; // 爵位順の並び(上ほど高い)。これ以外の爵位はその後ろ
+function compareOrganizations(a, b, groups, orgRoles) {
+  const byName = a.localeCompare(b, 'ja');
+  if (orgSortMode === 'members') {
+    // 人数は所属している人と役職に就いた人を合わせて、同じ人は1人と数える(多い順)
+    const count = (n) => new Set([...groups.get(n).map((r) => r.person.id), ...(orgRoles.get(n) || []).map((r) => r.person.id)]).size;
+    return (count(b) - count(a)) || byName;
+  }
+  if (orgSortMode === 'peerage') {
+    // 今(一番新しい)の爵位が高い順。爵位の無い組織は最後
+    const rank = (n) => {
+      const t = peerageAt(n, null);
+      if (!t) return 999;
+      const i = PEERAGE_RANK.indexOf(t);
+      return i < 0 ? PEERAGE_RANK.length : i;
+    };
+    return (rank(a) - rank(b)) || byName;
+  }
+  if (orgSortMode === 'oldest') {
+    // 所属・役職・爵位の中で一番早い年が古い順。年が分からない組織は最後
+    const first = (n) => {
+      const ys = [
+        ...groups.get(n).flatMap((r) => r.periods.map((x) => x.startYear)),
+        ...(orgRoles.get(n) || []).map((r) => r.startYear),
+        ...peeragesOf(n).map((pg) => pg.startYear),
+      ].filter((y) => y != null);
+      return ys.length ? Math.min(...ys) : Infinity;
+    };
+    const fa = first(a), fb = first(b);
+    return (fa === fb ? 0 : fa - fb) || byName;
+  }
+  return byName;
 }
 
 // 家臣の役職(家老・用人など)。組織図では爵位を持つ一門とは別の「家臣」の枝に出す
@@ -3162,6 +3198,13 @@ function wireLists() {
   });
 
   document.getElementById('organizations-search-input').addEventListener('input', renderOrganizations);
+  document.getElementById('organizations-sort-chips').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-org-sort]');
+    if (!chip) return;
+    orgSortMode = chip.dataset.orgSort;
+    e.currentTarget.querySelectorAll('.filter-chip').forEach((c) => c.classList.toggle('active', c === chip));
+    renderOrganizations();
+  });
   document.getElementById('bulk-affiliation-person-search').addEventListener('input', renderBulkAffiliationPersonList);
   document.getElementById('bulk-affiliation-person-list').addEventListener('click', (e) => {
     const row = e.target.closest('.list-item-check');

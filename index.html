@@ -530,6 +530,12 @@
       <div class="topbar-actions"><button class="icon-btn" data-nav="view-bulk-affiliation">追加</button></div>
     </div>
     <div class="search-bar"><input id="organizations-search-input" type="text" placeholder="組織名で検索"></div>
+    <div class="filter-chips" id="organizations-sort-chips">
+      <button class="filter-chip active" data-org-sort="name">名前順</button>
+      <button class="filter-chip" data-org-sort="members">人数順</button>
+      <button class="filter-chip" data-org-sort="peerage">爵位順</button>
+      <button class="filter-chip" data-org-sort="oldest">古い順</button>
+    </div>
     <ul id="organizations-list" class="list"></ul>
     <div id="organizations-empty" class="empty-state">まだ所属が登録されていません</div>
   </section>
