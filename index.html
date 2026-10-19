@@ -536,7 +536,7 @@
   <section id="view-bulk-affiliation" class="view">
     <div class="topbar">
       <button class="icon-btn back" data-back>キャンセル</button>
-      <h1 style="font-size:18px;">組織を追加</h1>
+      <h1 style="font-size:18px;" id="bulk-affiliation-title">組織を追加</h1>
       <button class="icon-btn" id="bulk-affiliation-save-btn">保存</button>
     </div>
     <div class="form-body">
@@ -552,9 +552,16 @@
       <div class="form-note">例: 1200〜1215年 当主=A、1215年〜 当主=B のように、年代ごとに誰が就いたかを入れる。選んだ人物にはこの組織の所属も自動で付く</div>
       <ul id="bulk-org-role-list" class="list" style="padding:0;"></ul>
       <button class="btn-secondary" id="bulk-org-role-add-btn" type="button">+ 役職を追加</button>
-      <div class="section-label" style="padding-left:0;">所属する人物を選ぶ</div>
+      <div id="bulk-org-members-section" class="hidden">
+        <div class="section-label" style="padding-left:0;">今の所属メンバー</div>
+        <div class="form-note">期間を直したり、×で組織から外したりできる</div>
+        <ul id="bulk-org-member-list" class="list" style="padding:0;"></ul>
+        <div id="bulk-org-member-empty" class="form-note hidden">所属している人物はいません</div>
+      </div>
+      <div class="section-label" style="padding-left:0;" id="bulk-affiliation-pick-label">所属する人物を選ぶ</div>
       <div class="search-bar"><input id="bulk-affiliation-person-search" type="text" placeholder="人物名で絞り込み"></div>
       <ul id="bulk-affiliation-person-list" class="list"></ul>
+      <button class="btn-danger hidden" id="bulk-org-delete-btn" type="button">この組織を削除</button>
     </div>
   </section>
 

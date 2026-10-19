@@ -911,7 +911,7 @@ function renderPersonDetail() {
     const rp = personById(r.personId);
     return `<span class="chip-link" data-person-id="${r.personId}">${escapeHtml(r.type)}: ${escapeHtml(rp ? rp.name : '?')}</span>`;
   }).join('');
-  document.getElementById('person-affiliations').textContent = (p.affiliations || []).map((a) => `${a.affiliation}(${formatRolePeriod(a, p)})`).join('、');
+  document.getElementById('person-affiliations').textContent = dedupeAffiliations(p.affiliations).map((a) => `${a.affiliation}(${formatRolePeriod(a, p)})`).join('、');
   document.getElementById('person-qualifications').textContent = latestQualificationsOf(p)
     .sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0))
     .map((q) => `${q.qualification}(${formatRolePeriod(q, p)})`).join('、');
@@ -1183,14 +1183,29 @@ function renderBulkRolePersonList() {
     </li>`).join('');
 }
 
+// 組織名・開始年・終了年がまったく同じ所属は1件にまとめる(同じ人を組織の追加画面で2回選んだ時などの重複を防ぐ)
+function dedupeAffiliations(list) {
+  const seen = new Set();
+  return (list || []).filter((a) => {
+    const key = `${a.affiliation}|${a.startYear ?? ''}|${a.endYear ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 // ===== 組織一覧(人物を横断して、所属名ごとにグループ表示) =====
 function renderOrganizations() {
   const q = (document.getElementById('organizations-search-input').value || '').trim().toLowerCase();
   const groups = new Map();
-  people.forEach((p) => (p.affiliations || []).forEach((a) => {
+  // 同じ人物が同じ組織に何度か所属していても(出戻り等)1行にまとめ、期間を「、」で並べる
+  people.forEach((p) => dedupeAffiliations(p.affiliations).forEach((a) => {
     if (!a.affiliation) return;
     if (!groups.has(a.affiliation)) groups.set(a.affiliation, []);
-    groups.get(a.affiliation).push({ person: p, startYear: a.startYear, endYear: a.endYear });
+    const list = groups.get(a.affiliation);
+    const row = list.find((r) => r.person.id === p.id);
+    if (row) row.periods.push(a);
+    else list.push({ person: p, startYear: a.startYear, endYear: a.endYear, periods: [a] });
   }));
   // 組織内の役職(人物の役職のうち、organizationにこの組織名が入っているもの)
   const orgRoles = new Map();
@@ -1227,25 +1242,68 @@ function renderOrganizations() {
     const memberHtml = rows.length ? (roleRows.length ? `<li class="org-sub-header">所属している人物</li>` : '') + rows.map((row) => `<li class="list-item list-item-indent" data-person-id="${row.person.id}">
         <div class="list-item-main">
           <div class="list-item-title">${escapeHtml(row.person.name)}</div>
-          <div class="list-item-sub">${formatRolePeriod(row)}</div>
+          <div class="list-item-sub">${row.periods.slice().sort(byYear).map((a) => formatRolePeriod(a, row.person)).join('、')}</div>
         </div>
         <span class="list-item-chevron">›</span>
       </li>`).join('') : '';
-    return `<li class="list-group-header">${escapeHtml(name)}(${rows.length}人)</li>${roleHtml}${memberHtml}`;
+    return `<li class="list-group-header org-header" data-org-name="${escapeHtml(name)}">${escapeHtml(name)}(${rows.length}人)<span class="org-edit-link">編集 ›</span></li>${roleHtml}${memberHtml}`;
   }).join('');
 }
 
 // ===== 組織の一括追加: 1つの組織を、複数人物にまとめて付与する =====
 let bulkAffiliationCheckedIds = new Set();
+// 組織一覧で組織名をタップした時は、同じ画面を「組織を編集」として開く(null=新しく追加)
+let editingOrgName = null;
+let pendingOrgEditName = null;
+function openOrgEditor(name) { pendingOrgEditName = name; navigateTo('view-bulk-affiliation'); }
 function openBulkAffiliationForm() {
-  document.getElementById('bulk-affiliation-name').value = '';
+  editingOrgName = pendingOrgEditName;
+  pendingOrgEditName = null;
+  const editing = editingOrgName != null;
+  document.getElementById('bulk-affiliation-title').textContent = editing ? '組織を編集' : '組織を追加';
+  document.getElementById('bulk-affiliation-name').value = editing ? editingOrgName : '';
   document.getElementById('bulk-affiliation-start').value = '';
   document.getElementById('bulk-affiliation-end').value = '';
   document.getElementById('bulk-affiliation-person-search').value = '';
+  document.getElementById('bulk-affiliation-pick-label').textContent = editing ? '新しく所属させる人物を選ぶ' : '所属する人物を選ぶ';
+  document.getElementById('bulk-org-members-section').classList.toggle('hidden', !editing);
+  document.getElementById('bulk-org-delete-btn').classList.toggle('hidden', !editing);
   bulkAffiliationCheckedIds = new Set();
   bulkOrgRoleRows = [];
+  bulkOrgMemberRows = [];
+  if (editing) {
+    people.forEach((p) => {
+      (p.roles || []).filter((r) => r.organization === editingOrgName).forEach((r) => bulkOrgRoleRows.push({
+        rowId: 'orgrole' + (bulkOrgRoleSeq++), startYear: r.startYear ?? null, endYear: r.endYear ?? null, role: r.role, category: r.category || '', personId: p.id,
+      }));
+      dedupeAffiliations(p.affiliations).filter((a) => a.affiliation === editingOrgName).forEach((a) => bulkOrgMemberRows.push({
+        rowId: 'orgmember' + (bulkOrgMemberSeq++), personId: p.id, startYear: a.startYear ?? null, endYear: a.endYear ?? null,
+      }));
+    });
+    const byYear = (a, b) => (a.startYear ?? 0) - (b.startYear ?? 0);
+    bulkOrgRoleRows.sort(byYear);
+    bulkOrgMemberRows.sort(byYear);
+  }
   renderBulkOrgRoleList();
+  renderBulkOrgMemberList();
   renderBulkAffiliationPersonList();
+}
+
+// 組織を編集する時の、今の所属メンバー(人物ごと・期間ごとに1行。期間の修正と外すことができる)
+let bulkOrgMemberRows = [];
+let bulkOrgMemberSeq = 0;
+function renderBulkOrgMemberList() {
+  const listEl = document.getElementById('bulk-org-member-list');
+  listEl.innerHTML = bulkOrgMemberRows.map((row) => {
+    const person = personById(row.personId);
+    return `<li class="participant-row summary-row org-member-row" data-row-id="${row.rowId}">
+      <input class="om-start" type="number" min="0" max="3000" value="${row.startYear ?? ''}" placeholder="開始">
+      <input class="om-end" type="number" min="0" max="3000" value="${row.endYear ?? ''}" placeholder="終了">
+      <div class="list-item-main">${escapeHtml(person ? person.name : '?')}</div>
+      <button type="button" class="remove-btn" data-remove-org-member="${row.rowId}">×</button>
+    </li>`;
+  }).join('');
+  document.getElementById('bulk-org-member-empty').classList.toggle('hidden', bulkOrgMemberRows.length > 0);
 }
 
 // 組織内の役職(年代ごと): {rowId, startYear, endYear, role, category, personId}
@@ -1749,6 +1807,7 @@ async function savePersonForm() {
       endYear: a.endYear != null && a.endYear !== '' ? clampYear(a.endYear) : null,
     }))
     .sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+  const affiliationsUnique = dedupeAffiliations(affiliations);
   const qualifications = qualificationDraftRows
     .filter((q) => (q.qualification || '').trim())
     .map((q) => ({
@@ -1805,7 +1864,7 @@ async function savePersonForm() {
     const p = personById(editingPersonId);
     oldSpouseIds = p.spouseIds || [];
     p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.episode = episode; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
-    p.roles = roles; p.affiliations = affiliations; p.qualifications = qualifications; p.medals = medals; p.factions = factions;
+    p.roles = roles; p.affiliations = affiliationsUnique; p.qualifications = qualifications; p.medals = medals; p.factions = factions;
     p.strength = strength;
     p.abilities = abilities; p.weapons = weapons; p.skills = skills; p.relationships = relationships;
     p.birthYear = birthYear; p.deathYear = deathYear;
@@ -1813,7 +1872,7 @@ async function savePersonForm() {
     await DB.updatePerson(p);
   } else {
     personId = await DB.addPerson({
-      name, kana, youmei, maidenName, episode, genpukuYear, genpukuMonth, roles, affiliations, qualifications, medals, factions, strength,
+      name, kana, youmei, maidenName, episode, genpukuYear, genpukuMonth, roles, affiliations: affiliationsUnique, qualifications, medals, factions, strength,
       abilities, weapons, skills, relationships, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now(),
     });
     currentPersonId = personId;
@@ -2705,6 +2764,7 @@ function wireLists() {
   delegate('roles-list', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
   delegate('person-relationships', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
   delegate('organizations-list', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
+  delegate('organizations-list', '[data-org-name]', (el) => openOrgEditor(el.dataset.orgName));
 
   document.getElementById('roles-search-input').addEventListener('input', renderRoles);
   document.getElementById('bulk-role-person-search').addEventListener('input', renderBulkRolePersonList);
@@ -2750,7 +2810,10 @@ function wireLists() {
     if (!affiliation) { alert('組織名を入力してください'); return; }
     const roleRows = bulkOrgRoleRows.filter((r) => (r.role || '').trim() && r.personId != null);
     if (bulkOrgRoleRows.some((r) => (r.role || '').trim() && r.personId == null)) { alert('役職に就いた人物を選んでください'); return; }
-    if (!bulkAffiliationCheckedIds.size && !roleRows.length) { alert('所属する人物か、役職を入れてください'); return; }
+    const editing = editingOrgName != null;
+    if (!editing && !bulkAffiliationCheckedIds.size && !roleRows.length) { alert('所属する人物か、役職を入れてください'); return; }
+    if (editing && !bulkAffiliationCheckedIds.size && !roleRows.length && !bulkOrgMemberRows.length
+      && !confirm('所属する人物も役職もいなくなるため、この組織は一覧から消えます。よろしいですか?')) return;
     const startVal = document.getElementById('bulk-affiliation-start').value;
     const endVal = document.getElementById('bulk-affiliation-end').value;
     const startYear = startVal ? clampYear(startVal) : null;
@@ -2758,6 +2821,21 @@ function wireLists() {
     const yearOf = (v) => (v != null && v !== '' ? clampYear(v) : null);
     const changed = new Map();
     const touch = (pid) => { const p = personById(pid); if (p) changed.set(pid, p); return p; };
+    if (editing) {
+      // 編集の時は、元の組織名の所属・役職をいったん全部外し、画面の内容(新しい名前)で入れ直す
+      people.forEach((p) => {
+        const hasAff = (p.affiliations || []).some((a) => a.affiliation === editingOrgName);
+        const hasRole = (p.roles || []).some((r) => r.organization === editingOrgName);
+        if (!hasAff && !hasRole) return;
+        touch(p.id);
+        p.affiliations = (p.affiliations || []).filter((a) => a.affiliation !== editingOrgName);
+        p.roles = (p.roles || []).filter((r) => r.organization !== editingOrgName);
+      });
+      for (const m of bulkOrgMemberRows) {
+        const p = touch(m.personId);
+        if (p) p.affiliations = [...(p.affiliations || []), { affiliation, startYear: yearOf(m.startYear), endYear: yearOf(m.endYear) }];
+      }
+    }
     for (const pid of bulkAffiliationCheckedIds) {
       const p = touch(pid);
       if (p) p.affiliations = [...(p.affiliations || []), { affiliation, startYear, endYear }];
@@ -2774,11 +2852,43 @@ function wireLists() {
       }
     }
     for (const p of changed.values()) {
-      p.affiliations = (p.affiliations || []).slice().sort(byYear);
+      p.affiliations = dedupeAffiliations(p.affiliations).sort(byYear);
       await DB.updatePerson(p);
     }
     await refreshAll();
     goBack();
+  });
+
+  document.getElementById('bulk-org-delete-btn').addEventListener('click', async () => {
+    const name = editingOrgName;
+    if (name == null) return;
+    if (!confirm(`「${name}」を削除しますか?\n全員の所属と、この組織の役職が外れます(人物は削除されません)`)) return;
+    for (const p of people) {
+      const hasAff = (p.affiliations || []).some((a) => a.affiliation === name);
+      const hasRole = (p.roles || []).some((r) => r.organization === name);
+      if (!hasAff && !hasRole) continue;
+      p.affiliations = (p.affiliations || []).filter((a) => a.affiliation !== name);
+      p.roles = (p.roles || []).filter((r) => r.organization !== name);
+      await DB.updatePerson(p);
+    }
+    await refreshAll();
+    goBack();
+  });
+
+  const orgMemberList = document.getElementById('bulk-org-member-list');
+  orgMemberList.addEventListener('input', (e) => {
+    const row = e.target.closest('.org-member-row');
+    const draft = row && bulkOrgMemberRows.find((r) => r.rowId === row.dataset.rowId);
+    if (!draft) return;
+    const val = e.target.value === '' ? null : Number(e.target.value);
+    if (e.target.classList.contains('om-start')) draft.startYear = val;
+    else if (e.target.classList.contains('om-end')) draft.endYear = val;
+  });
+  orgMemberList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-org-member]');
+    if (!btn) return;
+    bulkOrgMemberRows = bulkOrgMemberRows.filter((r) => r.rowId !== btn.dataset.removeOrgMember);
+    renderBulkOrgMemberList();
   });
 
   document.getElementById('bulk-org-role-add-btn').addEventListener('click', () => {
