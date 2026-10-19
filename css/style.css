@@ -201,6 +201,8 @@ html, body {
 /* ===== 役職一覧(グループ見出し)・一括追加(チェック式の人物選択) ===== */
 .list-group-header { padding: 14px 2px 4px; font-size: 13px; font-weight: 700; color: var(--text-dim); }
 .list-item.list-item-check { cursor: pointer; }
+.org-sub-header { padding: 6px 2px 2px 14px; font-size: 12px; color: var(--text-dim); }
+.org-role-row .participant-row-bottom .picker-btn { flex: 1; min-width: 0; width: auto; }
 .list-item.list-item-check input[type="checkbox"] { width: 20px; height: 20px; flex: none; }
 
 .summary-row input[type="number"] { flex: none; width: 56px; font-size: 13px; padding: 6px 6px; border-radius: 8px; background: var(--surface2); border: 0; color: var(--text); }
