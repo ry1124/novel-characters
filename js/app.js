@@ -587,6 +587,8 @@ function openPersonForm(id) {
   if (id) {
     const p = personById(id);
     nameEl.value = p.name || '';
+    document.getElementById('person-form-surname').value = p.surname || '';
+    surnameTouched = !!p.surname;
     kanaEl.value = p.kana || '';
     youmeiEl.value = p.youmei || '';
     maidenNameEl.value = p.maidenName || '';
@@ -613,6 +615,8 @@ function openPersonForm(id) {
     spouseDraftIds = (p.spouseIds || []).slice();
   } else {
     nameEl.value = ''; kanaEl.value = ''; youmeiEl.value = ''; maidenNameEl.value = '';
+    document.getElementById('person-form-surname').value = '';
+    surnameTouched = false;
     genpukuYearEl.value = ''; genpukuMonthEl.value = ''; birthEl.value = ''; deathEl.value = ''; episodeEl.value = '';
     summaryDraftRows = [];
     roleDraftRows = [];
@@ -713,6 +717,7 @@ function renderSearch() {
   const emptyEl = document.getElementById('search-empty');
   if (!q) { listEl.innerHTML = ''; emptyEl.classList.remove('hidden'); emptyEl.textContent = '名前を入力すると、人物の経歴を検索できます'; return; }
   const hits = people.filter((p) => (p.name || '').toLowerCase().includes(q) || (p.kana || '').toLowerCase().includes(q)
+    || (p.surname || '').toLowerCase().includes(q)
     || (p.youmei || '').toLowerCase().includes(q) || (p.maidenName || '').toLowerCase().includes(q)
     || (p.factions || []).some((f) => (f.faction || '').toLowerCase().includes(q))
     || (p.roles || []).some((r) => (r.role || '').toLowerCase().includes(q))
@@ -2071,6 +2076,28 @@ async function syncSummaryRows(personId) {
   }
 }
 
+// どこかで使われている組織名(所属・組織の役職・組織の記録)
+function knownOrganizationNames() {
+  const names = new Set(organizations.map((o) => o.name));
+  people.forEach((p) => {
+    (p.affiliations || []).forEach((a) => { if (a.affiliation) names.add(a.affiliation); });
+    (p.roles || []).forEach((r) => { if (r.organization) names.add(r.organization); });
+  });
+  return names;
+}
+
+// 名前から苗字を推測する: 空白・「・」で区切られていればその前、無ければ既にある苗字(人物の苗字・「○○家」の組織)の中で名前の頭に一致する一番長いもの
+function guessSurname(name) {
+  const n = (name || '').trim();
+  if (!n) return '';
+  const parts = n.split(/[\s　・]+/);
+  if (parts.length > 1) return parts[0];
+  const known = new Set(people.map((p) => p.surname).filter(Boolean));
+  knownOrganizationNames().forEach((o) => { if (o.endsWith('家') && o.length > 1) known.add(o.slice(0, -1)); });
+  return [...known].filter((s) => n.startsWith(s) && n.length > s.length).sort((a, b) => b.length - a.length)[0] || '';
+}
+let surnameTouched = false; // 苗字の欄を自分で書き換えたら、名前を変えても自動で上書きしない
+
 async function savePersonForm() {
   const name = document.getElementById('person-form-name').value.trim();
   if (!name) { alert('名前を入力してください'); return; }
@@ -2157,12 +2184,24 @@ async function savePersonForm() {
   const fatherId = fatherVal ? Number(fatherVal) : null;
   const motherId = motherVal ? Number(motherVal) : null;
   const spouseIds = spouseDraftIds.slice();
+  // 苗字: まだどこにも無い「○○家」なら、組織を自動で作ってこの人物を所属させる(生年から、終わりは空)
+  const surname = document.getElementById('person-form-surname').value.trim();
+  if (surname) {
+    const house = `${surname}家`;
+    if (!knownOrganizationNames().has(house)) {
+      await DB.putOrganization({ name: house, peerages: [], roleOrder: [], vassalRoles: [] });
+      if (!affiliationsUnique.some((a) => a.affiliation === house)) {
+        affiliationsUnique.push({ affiliation: house, startYear: birthYear, endYear: null });
+        affiliationsUnique.sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+      }
+    }
+  }
   let personId = editingPersonId;
   let oldSpouseIds = [];
   if (editingPersonId) {
     const p = personById(editingPersonId);
     oldSpouseIds = p.spouseIds || [];
-    p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.episode = episode; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
+    p.name = name; p.surname = surname; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.episode = episode; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
     p.roles = roles; p.affiliations = affiliationsUnique; p.qualifications = qualifications; p.medals = medals; p.factions = factionsNormalized;
     p.strength = strength;
     p.abilities = abilities; p.weapons = weapons; p.skills = skills; p.relationships = relationships;
@@ -2171,7 +2210,7 @@ async function savePersonForm() {
     await DB.updatePerson(p);
   } else {
     personId = await DB.addPerson({
-      name, kana, youmei, maidenName, episode, genpukuYear, genpukuMonth, roles, affiliations: affiliationsUnique, qualifications, medals, factions: factionsNormalized, strength,
+      name, surname, kana, youmei, maidenName, episode, genpukuYear, genpukuMonth, roles, affiliations: affiliationsUnique, qualifications, medals, factions: factionsNormalized, strength,
       abilities, weapons, skills, relationships, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now(),
     });
     currentPersonId = personId;
@@ -3415,6 +3454,12 @@ function wireDetailActions() {
 
 function wireForms() {
   document.getElementById('person-save-btn').addEventListener('click', savePersonForm);
+  // 名前を入力したら苗字を推測して入れる(苗字を自分で直した後は上書きしない。苗字を空にすると再び自動になる)
+  document.getElementById('person-form-name').addEventListener('input', (e) => {
+    if (surnameTouched) return;
+    document.getElementById('person-form-surname').value = guessSurname(e.target.value);
+  });
+  document.getElementById('person-form-surname').addEventListener('input', (e) => { surnameTouched = e.target.value.trim() !== ''; });
   document.getElementById('event-save-btn').addEventListener('click', saveEventForm);
 
   // プルダウンで「+ 新しい人物を作成...」を選んだ時、その場で名前を聞いて人物を作り選択状態にする
