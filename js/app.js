@@ -75,10 +75,16 @@ function formatPersonYears(p) {
   return `${p.birthYear ?? '?'}年〜${p.deathYear != null ? `${p.deathYear}年` : ''}${kyonen != null ? `(享年${kyonen})` : ''}`;
 }
 
+// 陣営の推移を所属年の昇順に並べ、直前と同じ陣営が続く記録は取り除く(陣営が変わった時だけを残す)。
+// 同じ陣営のまま何度も戦いに出ると、出来事ごとに同じ陣営の記録が増えて「東軍 → 東軍」と出てしまうため
+function normalizeFactions(list) {
+  const sorted = (list || []).filter((f) => f.faction).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+  return sorted.filter((f, i) => i === 0 || f.faction !== sorted[i - 1].faction);
+}
+
 // 陣営の推移を「東軍(1590年) → 西軍(1600年)」のように矢印で繋げて表示する(所属年の昇順)
 function formatFactionHistory(p) {
-  const list = (p.factions || []).slice().sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
-  return list.map((f) => (f.startYear != null ? `${f.faction}(${f.startYear}年)` : f.faction)).join(' → ');
+  return normalizeFactions(p.factions).map((f) => (f.startYear != null ? `${f.faction}(${f.startYear}年)` : f.faction)).join(' → ');
 }
 
 // 現時点(最後に所属した)陣営だけを返す。出来事の参加者に追加する時の初期値に使う
@@ -579,7 +585,7 @@ function openPersonForm(id) {
     youmeiEl.value = p.youmei || '';
     maidenNameEl.value = p.maidenName || '';
     // 旧データ(単一のp.faction)しかない場合はそれを1件目として引き継ぐ
-    factionDraftRows = (p.factions || (p.faction ? [{ faction: p.faction, startYear: null }] : []))
+    factionDraftRows = normalizeFactions(p.factions || (p.faction ? [{ faction: p.faction, startYear: null }] : []))
       .map((f) => ({ rowId: nextFactionRowId(), faction: f.faction, startYear: f.startYear }));
     strengthDraftRows = (p.strength || []).map((s) => ({ rowId: nextStrengthRowId(), tier: s.tier || 'C', score: s.score ?? '', startYear: s.startYear }));
     genpukuYearEl.value = p.genpukuYear ?? '';
@@ -2082,8 +2088,8 @@ async function savePersonForm() {
     .map((f) => ({
       faction: f.faction.trim(),
       startYear: f.startYear != null && f.startYear !== '' ? clampYear(f.startYear) : null,
-    }))
-    .sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+    }));
+  const factionsNormalized = normalizeFactions(factions);
   // 強さも陣営と同じく、成長の推移を矢印で表せるよう年代の昇順に並べ替えてから保存する
   const strength = strengthDraftRows
     .filter((s) => s.tier)
@@ -2116,7 +2122,7 @@ async function savePersonForm() {
     const p = personById(editingPersonId);
     oldSpouseIds = p.spouseIds || [];
     p.name = name; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.episode = episode; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
-    p.roles = roles; p.affiliations = affiliationsUnique; p.qualifications = qualifications; p.medals = medals; p.factions = factions;
+    p.roles = roles; p.affiliations = affiliationsUnique; p.qualifications = qualifications; p.medals = medals; p.factions = factionsNormalized;
     p.strength = strength;
     p.abilities = abilities; p.weapons = weapons; p.skills = skills; p.relationships = relationships;
     p.birthYear = birthYear; p.deathYear = deathYear;
@@ -2124,7 +2130,7 @@ async function savePersonForm() {
     await DB.updatePerson(p);
   } else {
     personId = await DB.addPerson({
-      name, kana, youmei, maidenName, episode, genpukuYear, genpukuMonth, roles, affiliations: affiliationsUnique, qualifications, medals, factions, strength,
+      name, kana, youmei, maidenName, episode, genpukuYear, genpukuMonth, roles, affiliations: affiliationsUnique, qualifications, medals, factions: factionsNormalized, strength,
       abilities, weapons, skills, relationships, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now(),
     });
     currentPersonId = personId;
@@ -2246,7 +2252,10 @@ async function syncFactionsFromParticipants(ev) {
     if (!person) continue;
     const list = person.factions || [];
     if (list.some((f) => f.faction === faction && f.startYear === ev.year)) continue;
-    person.factions = [...list, { faction, startYear: ev.year }].sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
+    // その年の時点ですでに同じ陣営なら記録を増やさない(陣営が変わった時だけ追加する)
+    const atYear = normalizeFactions(list).filter((f) => (f.startYear ?? -Infinity) <= ev.year).pop();
+    if (atYear && atYear.faction === faction) continue;
+    person.factions = normalizeFactions([...list, { faction, startYear: ev.year }]);
     await DB.updatePerson(person);
   }
 }
