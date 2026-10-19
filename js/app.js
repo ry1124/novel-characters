@@ -1220,17 +1220,22 @@ function renderBulkRolePersonList() {
 
 // ===== 組織図(家系図のような図で、役職ごとの歴代と所属メンバーを見る) =====
 let orgChartName = null;
-let orgChartYear = ''; // ''=全期間、数値文字列=その年の時点
+let orgChartYear = 'latest'; // 'latest'=最新(開いた時はこれ)、''=全期間(歴代)、数値文字列=その年の時点
 let orgChartStack = []; // 家臣の家の組織図へ移った時の、元の組織図(戻る用)
 function renderOrgChart() {
   const name = orgChartName;
   document.getElementById('org-chart-title').textContent = name ? `${name}の組織図` : '組織図';
-  const year = orgChartYear === '' ? null : Number(orgChartYear);
+  // 時点: 'latest'=最新(今も続いていて、亡くなっていない人だけ)、''=全期間(歴代)、数値=その年
+  const latest = orgChartYear === 'latest';
+  const year = latest || orgChartYear === '' ? null : Number(orgChartYear);
+  const pointMode = latest || year != null; // ある時点の顔ぶれを出すか(全期間以外)
   const activeAt = (item, person) => {
+    if (latest) return item.endYear == null && !(person && isPersonDead(person));
     if (year == null) return true;
     const start = item.startYear ?? (person ? person.birthYear : null);
     return (start ?? -Infinity) <= year && (item.endYear ?? Infinity) >= year;
   };
+  const aliveAtPoint = (p) => (latest ? !isPersonDead(p) : personRelevantAtYear(p, year));
   const byYear = (a, b) => (a.startYear ?? 0) - (b.startYear ?? 0);
 
   // 役職ごとの歴代(組織に紐づく役職)と、役職のない所属メンバー
@@ -1251,7 +1256,7 @@ function renderOrgChart() {
     affs.forEach((a) => [a.startYear, a.endYear].forEach((y) => { if (y != null) years.add(y); }));
     const orgRolesOfP = (p.roles || []).filter((r) => r.organization === name && r.role);
     const vassal = affs.some((a) => a.vassal) || orgRolesOfP.some((r) => orgVassalRoles(name).includes(r.role));
-    if (year == null) {
+    if (!pointMode) {
       if (roleHolderIds.has(p.id)) return; // 全期間では、役職のある人は役職の列(歴代)に出す
       const hit = affs.sort(byYear)[0];
       if (hit) members.push({ person: p, startYear: hit.startYear, endYear: hit.endYear, vassal });
@@ -1259,8 +1264,8 @@ function renderOrgChart() {
     }
     // その年に役職に就いていれば役職の列に出るので、ここでは出さない
     if (orgRolesOfP.some((r) => activeAt(r, p))) return;
-    if (!personRelevantAtYear(p, year)) return; // まだ生まれていない・すでに亡くなっている人は出さない
-    const past = orgRolesOfP.filter((r) => r.endYear != null && r.endYear < year).sort((a, b) => a.endYear - b.endYear).pop();
+    if (!aliveAtPoint(p)) return; // まだ生まれていない・すでに亡くなっている人は出さない
+    const past = orgRolesOfP.filter((r) => r.endYear != null && (latest || r.endYear < year)).sort((a, b) => a.endYear - b.endYear).pop();
     const note = past ? `元${past.role}` : '';
     // 所属の記録がある人は、所属の期間どおりに出す(所属の終わりの年=組織を離れた年。家臣が暇を出された・出奔した等)
     if (affs.length) {
@@ -1276,7 +1281,7 @@ function renderOrgChart() {
   peeragesOf(name).forEach((pg) => { if (pg.startYear != null) years.add(pg.startYear); });
   const sel = document.getElementById('org-chart-year');
   const ys = [...years];
-  let opts = '<option value="">全期間(歴代)</option>';
+  let opts = '<option value="latest">最新(今の顔ぶれ)</option><option value="">全期間(歴代)</option>';
   if (ys.length) for (let y = Math.min(...ys); y <= Math.max(...ys); y++) opts += `<option value="${y}">${y}年</option>`;
   sel.innerHTML = opts;
   sel.value = orgChartYear;
@@ -1390,7 +1395,7 @@ function renderOrgChart() {
   box(orgX, orgY, name || '', useGroups ? '' : peerage, { fill: '#5b37b7', stroke: '#5b37b7', color: '#ffffff', subColor: 'rgba(255,255,255,0.85)' });
   if (!cols.length) {
     const t = svgEl('text', { x: width / 2, y: headY + 20, 'text-anchor': 'middle', 'font-size': 12, fill: '#8a84a0' });
-    t.textContent = year != null ? `${year}年の時点で所属・役職のある人物はいません` : '所属・役職のある人物はいません';
+    t.textContent = latest ? '今の時点で所属・役職のある人物はいません' : year != null ? `${year}年の時点で所属・役職のある人物はいません` : '所属・役職のある人物はいません';
     svg.appendChild(t);
   }
 }
@@ -3180,13 +3185,13 @@ function wireLists() {
     if (el) openPersonDetail(Number(el.dataset.personId));
   });
   delegate('organizations-list', '[data-org-name]', (el) => openOrgEditor(el.dataset.orgName));
-  delegate('organizations-list', '[data-org-chart]', (el) => { orgChartName = el.dataset.orgChart; orgChartYear = ''; orgChartStack = []; navigateTo('view-org-chart'); });
+  delegate('organizations-list', '[data-org-chart]', (el) => { orgChartName = el.dataset.orgChart; orgChartYear = 'latest'; orgChartStack = []; navigateTo('view-org-chart'); });
   document.getElementById('org-chart-year').addEventListener('change', (e) => { orgChartYear = e.target.value; renderOrgChart(); });
   document.getElementById('org-chart-edit-btn').addEventListener('click', () => openOrgEditor(orgChartName));
   document.getElementById('org-chart-svg').addEventListener('click', (e) => {
     // 家臣の箱の家の名前をタップしたら、その家の組織図に移る(戻るで元の組織図に帰れる)
     const house = e.target.closest('[data-chart-org]');
-    if (house) { orgChartStack.push({ name: orgChartName, year: orgChartYear }); orgChartName = house.dataset.chartOrg; orgChartYear = ''; navigateTo('view-org-chart'); return; }
+    if (house) { orgChartStack.push({ name: orgChartName, year: orgChartYear }); orgChartName = house.dataset.chartOrg; orgChartYear = 'latest'; navigateTo('view-org-chart'); return; }
     const box = e.target.closest('[data-chart-person]');
     if (box) openPersonDetail(Number(box.dataset.chartPerson));
   });
