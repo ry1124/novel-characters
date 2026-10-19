@@ -1183,6 +1183,109 @@ function renderBulkRolePersonList() {
     </li>`).join('');
 }
 
+// ===== 組織図(家系図のような図で、役職ごとの歴代と所属メンバーを見る) =====
+let orgChartName = null;
+let orgChartYear = ''; // ''=全期間、数値文字列=その年の時点
+function renderOrgChart() {
+  const name = orgChartName;
+  document.getElementById('org-chart-title').textContent = name ? `${name}の組織図` : '組織図';
+  const year = orgChartYear === '' ? null : Number(orgChartYear);
+  const activeAt = (item, person) => {
+    if (year == null) return true;
+    const start = item.startYear ?? (person ? person.birthYear : null);
+    return (start ?? -Infinity) <= year && (item.endYear ?? Infinity) >= year;
+  };
+  const byYear = (a, b) => (a.startYear ?? 0) - (b.startYear ?? 0);
+
+  // 役職ごとの歴代(組織に紐づく役職)と、役職のない所属メンバー
+  const roleCols = new Map();
+  const roleHolderIds = new Set();
+  const years = new Set();
+  people.forEach((p) => (p.roles || []).forEach((r) => {
+    if (r.organization !== name || !r.role) return;
+    roleHolderIds.add(p.id);
+    [r.startYear, r.endYear].forEach((y) => { if (y != null) years.add(y); });
+    if (!activeAt(r, p)) return;
+    if (!roleCols.has(r.role)) roleCols.set(r.role, { role: r.role, category: r.category || '', items: [] });
+    roleCols.get(r.role).items.push({ person: p, startYear: r.startYear, endYear: r.endYear });
+  }));
+  const members = [];
+  people.forEach((p) => {
+    const affs = dedupeAffiliations(p.affiliations).filter((a) => a.affiliation === name);
+    affs.forEach((a) => [a.startYear, a.endYear].forEach((y) => { if (y != null) years.add(y); }));
+    if (roleHolderIds.has(p.id)) return; // 役職のある人は役職の列に出す
+    const hit = affs.filter((a) => activeAt(a, p)).sort(byYear)[0];
+    if (hit) members.push({ person: p, startYear: hit.startYear, endYear: hit.endYear });
+  });
+
+  // 時点の選択肢: 役職・所属に出てくる年の最小〜最大
+  const sel = document.getElementById('org-chart-year');
+  const ys = [...years];
+  let opts = '<option value="">全期間(歴代)</option>';
+  if (ys.length) for (let y = Math.min(...ys); y <= Math.max(...ys); y++) opts += `<option value="${y}">${y}年</option>`;
+  sel.innerHTML = opts;
+  sel.value = orgChartYear;
+
+  const cols = [...roleCols.values()].map((c) => ({ ...c, items: c.items.sort(byYear) }))
+    .sort((a, b) => byYear(a.items[0], b.items[0]));
+  if (members.length) cols.push({ role: '所属', category: '', items: members.sort(byYear), isMembers: true });
+
+  const W = 104, H = 46, GAP_X = 18, GAP_Y = 22;
+  const orgY = 20, headY = 110, itemY0 = 186;
+  const totalW = Math.max(cols.length, 1) * W + Math.max(0, cols.length - 1) * GAP_X;
+  const width = Math.max(totalW + 40, 320);
+  const maxItems = Math.max(1, ...cols.map((c) => c.items.length));
+  const height = itemY0 + maxItems * (H + GAP_Y) + 10;
+  const RATIO = 0.8;
+  const svg = document.getElementById('org-chart-svg');
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.style.width = (width * RATIO) + 'px';
+  svg.style.height = (height * RATIO) + 'px';
+  svg.innerHTML = '';
+  const LINE = '#b9b0d6';
+  const line = (x1, y1, x2, y2) => svg.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: LINE, 'stroke-width': 2 }));
+  const box = (x, y, title, sub, opt) => {
+    const g = svgEl('g', opt.personId != null ? { 'data-chart-person': opt.personId, style: 'cursor:pointer' } : {});
+    g.appendChild(svgEl('rect', { x, y, width: W, height: H, rx: 8, fill: opt.fill, stroke: opt.stroke, 'stroke-width': 1.5 }));
+    const t = svgEl('text', { x: x + W / 2, y: y + (sub ? 19 : 28), 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 700, fill: opt.color });
+    t.textContent = title.length > 7 ? title.slice(0, 7) + '…' : title;
+    g.appendChild(t);
+    if (sub) {
+      const s = svgEl('text', { x: x + W / 2, y: y + 35, 'text-anchor': 'middle', 'font-size': 9, fill: opt.subColor });
+      s.textContent = sub;
+      g.appendChild(s);
+    }
+    svg.appendChild(g);
+  };
+
+  const orgX = width / 2 - W / 2;
+  const x0 = (width - totalW) / 2;
+  if (cols.length) {
+    // 組織 → 各役職の列への線(家系図の親→子と同じく、横一本の線から各列へ下ろす)
+    const busY = (orgY + H + headY) / 2;
+    line(width / 2, orgY + H, width / 2, busY);
+    const colX = (i) => x0 + i * (W + GAP_X);
+    line(colX(0) + W / 2, busY, colX(cols.length - 1) + W / 2, busY);
+    cols.forEach((c, i) => {
+      const cx = colX(i) + W / 2;
+      line(cx, busY, cx, headY);
+      box(colX(i), headY, c.role, c.category || (c.isMembers ? `${c.items.length}人` : ''), { fill: '#ffffff', stroke: '#5b37b7', color: '#5b37b7', subColor: '#8a84a0' });
+      // 歴代は上から就任順に縦につなぐ
+      c.items.forEach((it, k) => {
+        const y = itemY0 + k * (H + GAP_Y);
+        line(cx, k === 0 ? headY + H : y - GAP_Y, cx, y);
+        box(colX(i), y, it.person.name, formatRolePeriod(it, it.person), { personId: it.person.id, fill: '#ece8f6', stroke: '#d8d0ef', color: '#1c1530', subColor: '#8a84a0' });
+      });
+    });
+  }
+  box(orgX, orgY, name || '', '', { fill: '#5b37b7', stroke: '#5b37b7', color: '#ffffff' });
+  if (!cols.length) {
+    const t = svgEl('text', { x: width / 2, y: headY + 20, 'text-anchor': 'middle', 'font-size': 12, fill: '#8a84a0' });
+    t.textContent = year != null ? `${year}年の時点で所属・役職のある人物はいません` : '所属・役職のある人物はいません';
+    svg.appendChild(t);
+  }
+}
+
 // 組織名・開始年・終了年がまったく同じ所属は1件にまとめる(同じ人を組織の追加画面で2回選んだ時などの重複を防ぐ)
 function dedupeAffiliations(list) {
   const seen = new Set();
@@ -1246,7 +1349,7 @@ function renderOrganizations() {
         </div>
         <span class="list-item-chevron">›</span>
       </li>`).join('') : '';
-    return `<li class="list-group-header org-header" data-org-name="${escapeHtml(name)}">${escapeHtml(name)}(${rows.length}人)<span class="org-edit-link">編集 ›</span></li>${roleHtml}${memberHtml}`;
+    return `<li class="list-group-header org-header"><span>${escapeHtml(name)}(${rows.length}人)</span><span class="org-header-links"><span class="org-edit-link" data-org-chart="${escapeHtml(name)}">組織図</span><span class="org-edit-link" data-org-name="${escapeHtml(name)}">編集 ›</span></span></li>${roleHtml}${memberHtml}`;
   }).join('');
 }
 
@@ -2678,6 +2781,7 @@ const RENDER_FNS = {
   'view-bulk-role': openBulkRoleForm,
   'view-organizations': renderOrganizations,
   'view-bulk-affiliation': openBulkAffiliationForm,
+  'view-org-chart': renderOrgChart,
 };
 
 function wireNav() {
@@ -2765,6 +2869,13 @@ function wireLists() {
   delegate('person-relationships', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
   delegate('organizations-list', '[data-person-id]', (el) => openPersonDetail(Number(el.dataset.personId)));
   delegate('organizations-list', '[data-org-name]', (el) => openOrgEditor(el.dataset.orgName));
+  delegate('organizations-list', '[data-org-chart]', (el) => { orgChartName = el.dataset.orgChart; orgChartYear = ''; navigateTo('view-org-chart'); });
+  document.getElementById('org-chart-year').addEventListener('change', (e) => { orgChartYear = e.target.value; renderOrgChart(); });
+  document.getElementById('org-chart-edit-btn').addEventListener('click', () => openOrgEditor(orgChartName));
+  document.getElementById('org-chart-svg').addEventListener('click', (e) => {
+    const box = e.target.closest('[data-chart-person]');
+    if (box) openPersonDetail(Number(box.dataset.chartPerson));
+  });
 
   document.getElementById('roles-search-input').addEventListener('input', renderRoles);
   document.getElementById('bulk-role-person-search').addEventListener('input', renderBulkRolePersonList);
@@ -2855,6 +2966,7 @@ function wireLists() {
       p.affiliations = dedupeAffiliations(p.affiliations).sort(byYear);
       await DB.updatePerson(p);
     }
+    if (editing && orgChartName === editingOrgName) orgChartName = affiliation; // 組織図から編集して名前を変えた時、戻った組織図も新しい名前で出す
     await refreshAll();
     goBack();
   });

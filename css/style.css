@@ -203,8 +203,9 @@ html, body {
 .list-group-header { padding: 14px 2px 4px; font-size: 13px; font-weight: 700; color: var(--text-dim); }
 .list-item.list-item-check { cursor: pointer; }
 .summary-row input[type="text"].pr-org { flex: 0 1 72px; }
-.org-header { display: flex; justify-content: space-between; align-items: baseline; cursor: pointer; }
-.org-edit-link { font-size: 13px; font-weight: 600; color: var(--accent); }
+.org-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.org-header-links { display: flex; gap: 14px; flex: none; }
+.org-edit-link { font-size: 13px; font-weight: 600; color: var(--accent); cursor: pointer; }
 .org-sub-header { padding: 6px 2px 2px 14px; font-size: 12px; color: var(--text-dim); }
 .org-role-row .participant-row-bottom .picker-btn { flex: 1; min-width: 0; width: auto; }
 .list-item.list-item-check input[type="checkbox"] { width: 20px; height: 20px; flex: none; }
@@ -340,4 +341,5 @@ html, body {
 .tree-wrap::-webkit-scrollbar { height: 5px; }
 .tree-wrap::-webkit-scrollbar-track { background: transparent; }
 .tree-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.tree-wrap #org-chart-svg { width: auto; max-width: none; aspect-ratio: auto; display: block; background: #f4f2fa; }
 .tree-wrap #family-tree-svg { width: auto; max-width: none; aspect-ratio: auto; height: 320px; display: block; background: #f4f2fa; }

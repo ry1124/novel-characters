@@ -532,6 +532,23 @@
     <div id="organizations-empty" class="empty-state">まだ所属が登録されていません</div>
   </section>
 
+  <!-- ===== 組織図 ===== -->
+  <section id="view-org-chart" class="view">
+    <div class="topbar">
+      <button class="icon-btn back" data-back>‹ 戻る</button>
+      <h1 style="font-size:20px;" id="org-chart-title">組織図</h1>
+      <div class="topbar-actions"><button class="icon-btn" id="org-chart-edit-btn">編集</button></div>
+    </div>
+    <div class="form-body" style="padding-bottom:0;">
+      <div class="form-row">
+        <label>時点</label>
+        <select id="org-chart-year"></select>
+      </div>
+    </div>
+    <div class="map-canvas-wrap tree-wrap"><svg id="org-chart-svg" class="map-canvas" viewBox="0 0 400 400"></svg></div>
+    <div class="map-hint">役職ごとに列を分け、上から就任した順に歴代を並べています(役職のない所属メンバーは「所属」の列)。時点で年を選ぶと、その年に就いていた人・所属していた人だけを出します。ボックスをタップするとその人物の画面に移ります</div>
+  </section>
+
   <!-- ===== 組織の一括追加 ===== -->
   <section id="view-bulk-affiliation" class="view">
     <div class="topbar">
