@@ -561,9 +561,16 @@ async function resolvePersonByName(name, excludeId) {
   if (!trimmed) return null;
   const existing = people.find((p) => p.name === trimmed && p.id !== excludeId);
   if (existing) return existing.id;
+  // 名前だけで作る人物も、苗字が分かればその「○○家」に自動で所属させる
+  const surname = guessSurname(trimmed);
+  const affiliations = [];
+  if (surname) {
+    await ensureHouseOrganization(`${surname}家`);
+    affiliations.push({ affiliation: `${surname}家`, startYear: null, endYear: null });
+  }
   const newId = await DB.addPerson({
-    name: trimmed, kana: '', youmei: '', maidenName: '', genpukuYear: null, genpukuMonth: null,
-    roles: [], affiliations: [], birthYear: null, deathYear: null,
+    name: trimmed, surname, kana: '', youmei: '', maidenName: '', genpukuYear: null, genpukuMonth: null,
+    roles: [], affiliations, birthYear: null, deathYear: null,
     fatherId: null, motherId: null, adoptiveFatherId: null, adoptiveMotherId: null, spouseIds: [], createdAt: Date.now(),
   });
   people.push({ id: newId, name: trimmed, roles: [], affiliations: [], spouseIds: [] }); // 同じ保存処理内での重複作成を防ぐ(refreshAllで正しい内容に置き換わる)
@@ -2141,6 +2148,13 @@ function guessSurname(name) {
   knownOrganizationNames().forEach((o) => { if (o.endsWith('家') && o.length > 1) known.add(o.slice(0, -1)); });
   return [...known].filter((s) => n.startsWith(s) && n.length > s.length).sort((a, b) => b.length - a.length)[0] || '';
 }
+// 「○○家」の組織が無ければ作る(すでにあれば何もしない)
+async function ensureHouseOrganization(house) {
+  if (knownOrganizationNames().has(house)) return;
+  const org = { name: house, peerages: [], roleOrder: [], vassalRoles: [] };
+  await DB.putOrganization(org);
+  organizations.push(org); // 同じ保存処理の中で続けて作る時に二重に作らないように(refreshAllで正しい内容に置き換わる)
+}
 let surnameTouched = false; // 苗字の欄を自分で書き換えたら、名前を変えても自動で上書きしない
 
 async function savePersonForm() {
@@ -2229,12 +2243,14 @@ async function savePersonForm() {
   const fatherId = fatherVal ? Number(fatherVal) : null;
   const motherId = motherVal ? Number(motherVal) : null;
   const spouseIds = spouseDraftIds.slice();
-  // 苗字: まだどこにも無い「○○家」なら、組織を自動で作ってこの人物を所属させる(生年から、終わりは空)
+  // 苗字: 新しく追加する人物は、苗字の「○○家」に自動で所属させる(家が無ければ作る)。
+  // 既にいる人物の編集では、まだどこにも無い苗字に変えた時だけ家を作って所属させる
   const surname = document.getElementById('person-form-surname').value.trim();
   if (surname) {
     const house = `${surname}家`;
-    if (!knownOrganizationNames().has(house)) {
-      await DB.putOrganization({ name: house, peerages: [], roleOrder: [], vassalRoles: [] });
+    const isNewHouse = !knownOrganizationNames().has(house);
+    if (isNewHouse || !editingPersonId) {
+      await ensureHouseOrganization(house);
       if (!affiliationsUnique.some((a) => a.affiliation === house)) {
         affiliationsUnique.push({ affiliation: house, startYear: birthYear, endYear: null });
         affiliationsUnique.sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0));
