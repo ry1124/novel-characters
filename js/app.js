@@ -1229,6 +1229,8 @@ function renderBulkRolePersonList() {
 let orgChartName = null;
 let orgChartYear = 'latest'; // 'latest'=最新(開いた時はこれ)、''=全期間(歴代)、数値文字列=その年の時点
 let orgChartStack = []; // 家臣の家の組織図へ移った時の、元の組織図(戻る用)
+let orgChartPattern = 'normal'; // 'normal'=通常(家) / 'military'=軍部
+const orgChartExpanded = new Set(); // 家臣の列で「他N人」を開いた列
 function renderOrgChart() {
   const name = orgChartName;
   document.getElementById('org-chart-title').textContent = name ? `${name}の組織図` : '組織図';
@@ -1244,6 +1246,11 @@ function renderOrgChart() {
   };
   const aliveAtPoint = (p) => (latest ? !isPersonDead(p) : personRelevantAtYear(p, year));
   const byYear = (a, b) => (a.startYear ?? 0) - (b.startYear ?? 0);
+  // 図のパターン: 通常(軍部以外の役職+所属メンバー) / 軍部(分類が「軍部」の役職だけ)
+  const military = orgChartPattern === 'military';
+  const inPattern = (r) => (military ? r.category === '軍部' : r.category !== '軍部');
+  if (military) document.getElementById('org-chart-title').textContent = `${name}の組織図(軍部)`;
+  document.querySelectorAll('#org-chart-pattern .filter-chip').forEach((c) => c.classList.toggle('active', c.dataset.pattern === orgChartPattern));
 
   // 役職ごとの歴代(組織に紐づく役職)と、役職のない所属メンバー
   const roleCols = new Map();
@@ -1251,8 +1258,9 @@ function renderOrgChart() {
   const years = new Set();
   people.forEach((p) => (p.roles || []).forEach((r) => {
     if (r.organization !== name || !r.role) return;
-    roleHolderIds.add(p.id);
     [r.startYear, r.endYear].forEach((y) => { if (y != null) years.add(y); });
+    if (!inPattern(r)) return; // 軍部の図には分類「軍部」の役職だけ、通常の図には軍部以外の役職だけを出す
+    roleHolderIds.add(p.id);
     if (!activeAt(r, p)) return;
     if (!roleCols.has(r.role)) roleCols.set(r.role, { role: r.role, category: r.category || '', items: [] });
     roleCols.get(r.role).items.push({ person: p, startYear: r.startYear, endYear: r.endYear });
@@ -1261,7 +1269,8 @@ function renderOrgChart() {
   people.forEach((p) => {
     const affs = dedupeAffiliations(p.affiliations).filter((a) => a.affiliation === name);
     affs.forEach((a) => [a.startYear, a.endYear].forEach((y) => { if (y != null) years.add(y); }));
-    const orgRolesOfP = (p.roles || []).filter((r) => r.organization === name && r.role);
+    if (military) return; // 軍部の図は役職だけで組む(役職のない所属メンバーは出さない)
+    const orgRolesOfP = (p.roles || []).filter((r) => r.organization === name && r.role && inPattern(r));
     const vassal = affs.some((a) => a.vassal) || orgRolesOfP.some((r) => orgVassalRoles(name).includes(r.role));
     if (!pointMode) {
       if (roleHolderIds.has(p.id)) return; // 全期間では、役職のある人は役職の列(歴代)に出す
@@ -1304,7 +1313,16 @@ function renderOrgChart() {
   const vassalMembers = members.filter((m) => m.vassal).sort(byYear);
   if (familyMembers.length) familyCols.push({ role: '所属', category: '', items: familyMembers, isMembers: true });
   if (vassalMembers.length) vassalCols.push({ role: '家臣', category: '', items: vassalMembers, isMembers: true });
-  const peerage = peerageAt(name, year);
+  const peerage = military ? '' : peerageAt(name, year); // 爵位は家の図だけに付ける
+  // 家臣の列で2人以上縦に並ぶ時は1人目だけ出して残りは「他N人」に省略する(タップで開く・たたむ)
+  vassalCols.forEach((c) => {
+    if (c.items.length < 2) return;
+    c.toggleKey = `${name}|${orgChartPattern}|${c.role}`;
+    if (orgChartExpanded.has(c.toggleKey)) { c.expanded = true; return; }
+    c.total = c.items.length;
+    c.hiddenCount = c.items.length - 1;
+    c.items = c.items.slice(0, 1);
+  });
   const useGroups = vassalCols.length > 0;
   const groups = useGroups
     ? [{ label: '一門', sub: peerage, cols: familyCols }, { label: '家臣', sub: '', cols: vassalCols, isVassal: true }]
@@ -1334,7 +1352,8 @@ function renderOrgChart() {
     else it.age = !c.isMembers && it.startYear != null ? `就任時${it.startYear - b}歳` : `${b}年生`;
   })));
   const itemH = (it) => (it.age ? 56 : H) + (it.house ? 14 : 0);
-  const colHeight = (c) => c.items.reduce((s, it) => s + itemH(it) + GAP_Y, 0);
+  const TOGGLE_H = 26;
+  const colHeight = (c) => c.items.reduce((s, it) => s + itemH(it) + GAP_Y, 0) + (c.toggleKey ? TOGGLE_H + GAP_Y : 0);
   const height = itemY0 + Math.max(H + GAP_Y, ...cols.map(colHeight)) + 10;
   const RATIO = 0.8;
   const svg = document.getElementById('org-chart-svg');
@@ -1376,7 +1395,7 @@ function renderOrgChart() {
   const drawCols = (gCols, gx) => gCols.map((c, i) => {
     const x = gx + i * (W + GAP_X);
     const cx = x + W / 2;
-    box(x, headY, c.role, c.category || (c.isMembers ? `${c.items.length}人` : ''), { fill: '#ffffff', stroke: '#5b37b7', color: '#5b37b7', subColor: '#8a84a0' });
+    box(x, headY, c.role, c.category || (c.isMembers ? `${c.total ?? c.items.length}人` : ''), { fill: '#ffffff', stroke: '#5b37b7', color: '#5b37b7', subColor: '#8a84a0' });
     // 歴代は上から就任順に縦につなぐ
     let y = itemY0;
     c.items.forEach((it, k) => {
@@ -1389,6 +1408,16 @@ function renderOrgChart() {
       }
       y += itemH(it) + GAP_Y;
     });
+    if (c.toggleKey) {
+      // 省略した人数(または「たたむ」)の小さな箱。タップで開閉する
+      line(cx, y - GAP_Y, cx, y);
+      const g = svgEl('g', { 'data-chart-expand': c.toggleKey, style: 'cursor:pointer' });
+      g.appendChild(svgEl('rect', { x: x + 10, y, width: W - 20, height: TOGGLE_H, rx: 13, fill: '#f6efe4', stroke: '#a9896a', 'stroke-width': 1.2, 'stroke-dasharray': c.expanded ? '' : '3,2' }));
+      const t = svgEl('text', { x: cx, y: y + 17, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: '#5f4a32' });
+      t.textContent = c.expanded ? 'たたむ ▲' : `他${c.hiddenCount}人 ▼`;
+      g.appendChild(t);
+      svg.appendChild(g);
+    }
     return cx;
   });
   let gx = (width - totalW) / 2;
@@ -1416,7 +1445,8 @@ function renderOrgChart() {
   box(orgX, orgY, name || '', useGroups ? '' : peerage, { fill: '#5b37b7', stroke: '#5b37b7', color: '#ffffff', subColor: 'rgba(255,255,255,0.85)' });
   if (!cols.length) {
     const t = svgEl('text', { x: width / 2, y: headY + 20, 'text-anchor': 'middle', 'font-size': 12, fill: '#8a84a0' });
-    t.textContent = latest ? '今の時点で所属・役職のある人物はいません' : year != null ? `${year}年の時点で所属・役職のある人物はいません` : '所属・役職のある人物はいません';
+    const what = military ? '軍部の役職に就いている人物' : '所属・役職のある人物';
+    t.textContent = latest ? `今の時点で${what}はいません` : year != null ? `${year}年の時点で${what}はいません` : `${what}はいません`;
     svg.appendChild(t);
   }
 }
@@ -3221,10 +3251,23 @@ function wireLists() {
     if (el) openPersonDetail(Number(el.dataset.personId));
   });
   delegate('organizations-list', '[data-org-name]', (el) => openOrgEditor(el.dataset.orgName));
-  delegate('organizations-list', '[data-org-chart]', (el) => { orgChartName = el.dataset.orgChart; orgChartYear = 'latest'; orgChartStack = []; navigateTo('view-org-chart'); });
+  delegate('organizations-list', '[data-org-chart]', (el) => { orgChartName = el.dataset.orgChart; orgChartYear = 'latest'; orgChartPattern = 'normal'; orgChartStack = []; navigateTo('view-org-chart'); });
   document.getElementById('org-chart-year').addEventListener('change', (e) => { orgChartYear = e.target.value; renderOrgChart(); });
   document.getElementById('org-chart-edit-btn').addEventListener('click', () => openOrgEditor(orgChartName));
+  document.getElementById('org-chart-pattern').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-pattern]');
+    if (!chip) return;
+    orgChartPattern = chip.dataset.pattern;
+    renderOrgChart();
+  });
   document.getElementById('org-chart-svg').addEventListener('click', (e) => {
+    const toggle = e.target.closest('[data-chart-expand]');
+    if (toggle) {
+      const key = toggle.dataset.chartExpand;
+      if (orgChartExpanded.has(key)) orgChartExpanded.delete(key); else orgChartExpanded.add(key);
+      renderOrgChart();
+      return;
+    }
     // 家臣の箱の家の名前をタップしたら、その家の組織図に移る(戻るで元の組織図に帰れる)
     const house = e.target.closest('[data-chart-org]');
     if (house) { orgChartStack.push({ name: orgChartName, year: orgChartYear }); orgChartName = house.dataset.chartOrg; orgChartYear = 'latest'; navigateTo('view-org-chart'); return; }
