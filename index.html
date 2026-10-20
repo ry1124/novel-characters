@@ -222,7 +222,12 @@
       <div class="form-row"><label>生年(0〜3000)</label><input id="person-form-birth" type="number" min="0" max="3000" placeholder="例: 480"></div>
       <div class="form-row"><label>没年(0〜3000、存命・不明なら空欄)</label><input id="person-form-death" type="number" min="0" max="3000" placeholder="例: 540"></div>
       <div class="form-row"><label>幼名(任意)</label><input id="person-form-youmei" type="text" placeholder="例: 竹千代"></div>
-      <div class="form-row"><label>旧姓(任意)</label><input id="person-form-maiden-name" type="text" placeholder="例: 鈴木"></div>
+      <div class="form-row"><label>旧姓(任意)</label>
+        <div class="event-time-row">
+          <input id="person-form-maiden-name" type="text" placeholder="例: 鈴木">
+          <input id="person-form-maiden-until" type="number" min="0" max="3000" placeholder="改姓した年">
+        </div>
+        <div class="form-note">改姓した年(結婚した年など)を入れると、それより前の出来事・組織図・年代の画面では旧姓の名前(例: 鈴木花子)で表示します</div></div>
       <datalist id="person-faction-datalist"></datalist>
       <div class="form-row">
         <label>元服(任意)</label>
@@ -556,8 +561,9 @@
     <div class="filter-chips" id="org-chart-pattern">
       <button class="filter-chip active" data-pattern="normal">家(通常)</button>
       <button class="filter-chip" data-pattern="military">軍部</button>
+      <button class="filter-chip" id="org-chart-fit-btn">全体を表示</button>
     </div>
-    <div class="map-canvas-wrap tree-wrap"><svg id="org-chart-svg" class="map-canvas" viewBox="0 0 400 400"></svg></div>
+    <div class="map-canvas-wrap tree-wrap org-chart-wrap" id="org-chart-wrap"><svg id="org-chart-svg" class="map-canvas" viewBox="0 0 400 400"></svg></div>
     <div class="map-hint">役職ごとに列を分け、上から就任した順に歴代を並べています(役職のない所属メンバーは「所属」の列)。家臣がいる時は、爵位を持つ「一門」と「家臣」の2つの枝に分かれます(家臣の列に2人以上いる時は「他N人」に省略、タップで開閉)。「軍部」に切り替えると、分類が「軍部」の役職だけで組んだ図になります(通常の図には軍部の役職は出ません)。時点の「最新」は今の顔ぶれ(終わりの年が空で、亡くなっていない人)、「全期間」は歴代すべて、年を選ぶとその年に就いていた人・所属していた人だけを出します。ボックスをタップするとその人物の画面に移ります</div>
   </section>
 

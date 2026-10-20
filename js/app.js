@@ -149,6 +149,21 @@ function personAgeAt(p, year) {
   return year - p.birthYear;
 }
 
+// 旧姓の名前: 今の名前の苗字部分を旧姓に置き換える(例: 山田花子・旧姓 鈴木 → 鈴木花子)。苗字の部分が分からなければ「旧姓 名前」
+function maidenFullName(p) {
+  const surname = p.surname || guessSurname(p.name);
+  if (surname && (p.name || '').startsWith(surname) && p.name.length > surname.length) {
+    return p.maidenName + p.name.slice(surname.length); // 「山田 花子」のような区切りもそのまま残す
+  }
+  return `${p.maidenName} ${p.name}`;
+}
+// その年の時点での名前: 旧姓があり、改姓した年より前なら旧姓の名前、それ以外は今の名前
+function nameAt(p, year) {
+  if (!p) return '';
+  if (p.maidenName && p.maidenNameUntil != null && year != null && year < p.maidenNameUntil) return maidenFullName(p);
+  return p.name;
+}
+
 async function refreshAll() {
   [people, events, organizations] = await Promise.all([DB.getAllPeople(), DB.getAllEvents(), DB.getAllOrganizations()]);
 }
@@ -599,6 +614,7 @@ function openPersonForm(id) {
     kanaEl.value = p.kana || '';
     youmeiEl.value = p.youmei || '';
     maidenNameEl.value = p.maidenName || '';
+    document.getElementById('person-form-maiden-until').value = p.maidenNameUntil ?? '';
     // 旧データ(単一のp.faction)しかない場合はそれを1件目として引き継ぐ
     factionDraftRows = normalizeFactions(p.factions || (p.faction ? [{ faction: p.faction, startYear: null }] : []))
       .map((f) => ({ rowId: nextFactionRowId(), faction: f.faction, startYear: f.startYear }));
@@ -622,6 +638,7 @@ function openPersonForm(id) {
     spouseDraftIds = (p.spouseIds || []).slice();
   } else {
     nameEl.value = ''; kanaEl.value = ''; youmeiEl.value = ''; maidenNameEl.value = '';
+    document.getElementById('person-form-maiden-until').value = '';
     document.getElementById('person-form-surname').value = '';
     surnameTouched = false;
     genpukuYearEl.value = ''; genpukuMonthEl.value = ''; birthEl.value = ''; deathEl.value = ''; episodeEl.value = '';
@@ -940,7 +957,7 @@ function renderPersonDetail() {
   document.getElementById('person-name').textContent = p.name;
   document.getElementById('person-kana').textContent = p.kana || '';
   document.getElementById('person-youmei').textContent = p.youmei ? `幼名: ${p.youmei}` : '';
-  document.getElementById('person-maiden-name').textContent = p.maidenName ? `旧姓: ${p.maidenName}` : '';
+  document.getElementById('person-maiden-name').textContent = p.maidenName ? `旧姓: ${p.maidenName}${p.maidenNameUntil != null ? `(${p.maidenNameUntil}年に改姓、それまでは${maidenFullName(p)})` : ''}` : '';
   document.getElementById('person-faction').textContent = (p.factions || []).length ? `陣営: ${formatFactionHistory(p)}` : '';
   document.getElementById('person-strength').textContent = (p.strength || []).length ? `強さ: ${formatStrengthHistory(p)}` : '';
   document.getElementById('person-genpuku').textContent = p.genpukuYear != null ? `元服: ${formatYearMonth(p.genpukuYear, p.genpukuMonth)}` : '';
@@ -1000,14 +1017,16 @@ function renderPersonDetail() {
       const isDead = part.status === '死亡';
       const age = personAgeAt(p, ev.year);
       // この出来事の他の参加者から見て、この人物が「討ち取った相手」に指定されていれば、誰にやられたかを表示する
-      const namesOf = (ids) => ids.map((id) => personById(id)).filter(Boolean).map((o) => o.name);
+      const namesOf = (ids) => ids.map((id) => personById(id)).filter(Boolean).map((o) => nameAt(o, ev.year));
       const byOthers = (idsOf) => namesOf((ev.participants || []).filter((other) => idsOf(other).includes(p.id)).map((other) => other.personId));
       const killedByNames = byOthers(killedIdsOf);
       const injuredByNames = byOthers(injuredIdsOf);
       const killedNames = namesOf(killedIdsOf(part));
       const injuredNames = namesOf(injuredIdsOf(part));
       // 出来事詳細の参加者欄と同じく、誰を討ち取った/誰にやられたかを年表にも出す
+      const nameThen = nameAt(p, ev.year);
       const desc = [
+        nameThen !== p.name ? `当時は${nameThen}` : '', // 旧姓の期間の出来事は、当時の名前も添える
         killedNames.length ? `${killedNames.join('・')}を討ち取った` : '',
         injuredNames.length ? `${injuredNames.join('・')}を負傷させた` : '',
         killedByNames.length ? `${killedByNames.join('・')}に討ち取られた` : '',
@@ -1087,13 +1106,13 @@ function renderEventDetail() {
   const participantItemHtml = (p) => {
     const person = pm.get(p.personId);
     const age = person ? personAgeAt(person, ev.year) : null;
-    const killedNames = killedIdsOf(p).map((id) => pm.get(id)).filter(Boolean).map((o) => o.name);
-    const injuredNames = injuredIdsOf(p).map((id) => pm.get(id)).filter(Boolean).map((o) => o.name);
+    const killedNames = killedIdsOf(p).map((id) => pm.get(id)).filter(Boolean).map((o) => nameAt(o, ev.year));
+    const injuredNames = injuredIdsOf(p).map((id) => pm.get(id)).filter(Boolean).map((o) => nameAt(o, ev.year));
     // 他の参加者の「討ち取った/負傷させた相手」にこの人物が指定されていれば、逆方向(誰にやられたか)も表示する
     const killedByNames = participants.filter((other) => killedIdsOf(other).includes(p.personId))
-      .map((other) => pm.get(other.personId)).filter(Boolean).map((o) => o.name);
+      .map((other) => pm.get(other.personId)).filter(Boolean).map((o) => nameAt(o, ev.year));
     const injuredByNames = participants.filter((other) => injuredIdsOf(other).includes(p.personId))
-      .map((other) => pm.get(other.personId)).filter(Boolean).map((o) => o.name);
+      .map((other) => pm.get(other.personId)).filter(Boolean).map((o) => nameAt(o, ev.year));
     const subParts = [
       age !== null ? `${age}歳` : '',
       p.tier ? `ティア${p.tier}${p.score != null && p.score !== '' ? ` ${p.score}` : ''}` : '',
@@ -1105,7 +1124,7 @@ function renderEventDetail() {
     ].filter(Boolean);
     return `<li class="list-item" data-person-id="${p.personId}">
       <div class="list-item-main">
-        <div class="list-item-title">${escapeHtml(person ? person.name : '(不明な人物)')}</div>
+        <div class="list-item-title">${escapeHtml(person ? nameAt(person, ev.year) : '(不明な人物)')}</div>
         <div class="list-item-sub">${escapeHtml(subParts.join(' ・ '))}</div>
       </div>
       <span class="status-pill ${STATUS_CLASS[p.status] || 'unknown'}">${p.status || '不明'}</span>
@@ -1139,7 +1158,7 @@ function renderEventDetail() {
     const faction = (p.faction || '').trim();
     return `${header}<li class="list-item list-item-indent" data-person-id="${p.personId}">
       <div class="list-item-main">
-        <div class="list-item-title">${escapeHtml(person ? person.name : '(不明な人物)')}</div>
+        <div class="list-item-title">${escapeHtml(person ? nameAt(person, ev.year) : '(不明な人物)')}</div>
         <div class="list-item-sub">${escapeHtml([p.score != null && p.score !== '' ? `${p.score}点` : '', faction].filter(Boolean).join(' ・ '))}</div>
       </div>
       <span class="list-item-chevron">›</span>
@@ -1153,7 +1172,7 @@ function renderEventDetail() {
   const showMap = shapes.length || placed.length;
   document.getElementById('event-map-label').style.display = showMap ? '' : 'none';
   wrap.style.display = showMap ? '' : 'none';
-  if (showMap) renderMapSvg(svg, shapes, placed, pm);
+  if (showMap) renderMapSvg(svg, shapes, placed, pm, ev.year);
   renderMapLegend('event-map-legend', placed);
 
   const children = events.filter((c) => c.parentEventId === ev.id).sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
@@ -1400,7 +1419,7 @@ function renderOrgChart() {
     let y = itemY0;
     c.items.forEach((it, k) => {
       line(cx, k === 0 ? headY + H : y - GAP_Y, cx, y);
-      box(x, y, it.person.name, it.note || formatRolePeriod(it, it.person), { personId: it.person.id, fill: '#ece8f6', stroke: '#d8d0ef', color: '#1c1530', subColor: '#8a84a0', h: itemH(it), sub2: it.age });
+      box(x, y, nameAt(it.person, year ?? (latest ? presentYear : it.startYear)), it.note || formatRolePeriod(it, it.person), { personId: it.person.id, fill: '#ece8f6', stroke: '#d8d0ef', color: '#1c1530', subColor: '#8a84a0', h: itemH(it), sub2: it.age });
       if (it.house) {
         const t = svgEl('text', { x: cx, y: y + (it.age ? 65 : 51), 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 700, fill: '#5b37b7', 'data-chart-org': it.house, style: 'cursor:pointer; text-decoration: underline' });
         t.textContent = `${it.house.length > 8 ? it.house.slice(0, 8) + '…' : it.house} ›`;
@@ -1879,7 +1898,7 @@ function renderMapLegend(elId, participants) {
   el.innerHTML = factions.map((f) => `<span class="map-legend-item"><span class="map-legend-dot" style="background:${factionColorOf(f)}"></span>${escapeHtml(f)}</span>`).join('');
 }
 
-function renderMapSvg(svg, shapes, participants, pm) {
+function renderMapSvg(svg, shapes, participants, pm, year) { // yearを渡すと、その年の名前(旧姓など)でラベルを出す
   svg.innerHTML = '';
   svg.appendChild(svgEl('rect', { x: 0, y: 0, width: 400, height: 300, fill: '#dfe8d8' }));
   shapes.forEach((shape, idx) => {
@@ -1904,7 +1923,7 @@ function renderMapSvg(svg, shapes, participants, pm) {
   participants.forEach((p, idx) => {
     if (!p.position) return;
     const person = pm.get(p.personId);
-    const name = person ? person.name : '?';
+    const name = person ? nameAt(person, year) : '?';
     const dead = p.status === '死亡';
     const g = svgEl('g', { 'data-kind': 'marker', 'data-participant-idx': idx });
     g.appendChild(svgEl('circle', { cx: p.position.x, cy: p.position.y, r: 14, fill: factionColorOf(p.faction), stroke: dead ? '#d1374a' : '#fff', 'stroke-width': dead ? 3 : 2 }));
@@ -1926,7 +1945,7 @@ function svgPoint(svg, e) {
 
 function redrawMapEditor() {
   const svg = document.getElementById('map-svg');
-  renderMapSvg(svg, mapDraftShapes, mapDraftParticipants, peopleMapCache());
+  renderMapSvg(svg, mapDraftShapes, mapDraftParticipants, peopleMapCache(), (eventById(mapEditingEventId) || {}).year);
   renderMapLegend('map-legend', mapDraftParticipants);
 }
 
@@ -2219,6 +2238,8 @@ async function savePersonForm() {
   const kana = document.getElementById('person-form-kana').value.trim();
   const youmei = document.getElementById('person-form-youmei').value.trim();
   const maidenName = document.getElementById('person-form-maiden-name').value.trim();
+  const maidenUntilVal = document.getElementById('person-form-maiden-until').value;
+  const maidenNameUntil = maidenName && maidenUntilVal ? clampYear(maidenUntilVal) : null;
   const episode = document.getElementById('person-form-episode').value.trim();
   const genpukuYearVal = document.getElementById('person-form-genpuku-year').value;
   const genpukuMonthVal = document.getElementById('person-form-genpuku-month').value;
@@ -2318,7 +2339,7 @@ async function savePersonForm() {
   if (editingPersonId) {
     const p = personById(editingPersonId);
     oldSpouseIds = p.spouseIds || [];
-    p.name = name; p.surname = surname; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.episode = episode; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
+    p.name = name; p.surname = surname; p.kana = kana; p.youmei = youmei; p.maidenName = maidenName; p.maidenNameUntil = maidenNameUntil; p.episode = episode; p.genpukuYear = genpukuYear; p.genpukuMonth = genpukuMonth;
     p.roles = roles; p.affiliations = affiliationsUnique; p.qualifications = qualifications; p.medals = medals; p.factions = factionsNormalized;
     p.strength = strength;
     p.abilities = abilities; p.weapons = weapons; p.skills = skills; p.relationships = relationships;
@@ -2327,7 +2348,7 @@ async function savePersonForm() {
     await DB.updatePerson(p);
   } else {
     personId = await DB.addPerson({
-      name, surname, kana, youmei, maidenName, episode, genpukuYear, genpukuMonth, roles, affiliations: affiliationsUnique, qualifications, medals, factions: factionsNormalized, strength,
+      name, surname, kana, youmei, maidenName, maidenNameUntil, episode, genpukuYear, genpukuMonth, roles, affiliations: affiliationsUnique, qualifications, medals, factions: factionsNormalized, strength,
       abilities, weapons, skills, relationships, birthYear, deathYear, fatherId, motherId, spouseIds, createdAt: Date.now(),
     });
     currentPersonId = personId;
@@ -3094,7 +3115,7 @@ function renderPersonYearResult(p, yearVal) {
   const yearEvents = events.filter((ev) => (ev.participants || []).some((pt) => pt.personId === p.id) && yearWithinEvent(ev, year))
     .sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
   const subParts = [
-    age !== null ? `${age}歳` : '', activeRoles.join('・'), activeAffiliations.join('・'),
+    nameAt(p, year) !== p.name ? `当時は${nameAt(p, year)}` : '', age !== null ? `${age}歳` : '', activeRoles.join('・'), activeAffiliations.join('・'),
     activeQualifications.length ? `資格:${activeQualifications.join('・')}` : '',
     earnedMedals.length ? `勲章:${earnedMedals.join('・')}` : '',
   ].filter(Boolean);
@@ -3141,7 +3162,7 @@ function renderYearLookup() {
     const subParts = [age !== null ? `${age}歳` : '', activeRoles.join('・'), activeAffiliations.join('・')].filter(Boolean);
     return `<li class="list-item" data-person-id="${p.id}">
       <div class="list-item-main">
-        <div class="list-item-title">${escapeHtml(p.name)}</div>
+        <div class="list-item-title">${escapeHtml(nameAt(p, year))}</div>
         <div class="list-item-sub">${escapeHtml(subParts.join(' ・ ') || '情報なし')}</div>
       </div>
       <span class="list-item-chevron">›</span>
@@ -3260,6 +3281,13 @@ function wireLists() {
   delegate('organizations-list', '[data-org-chart]', (el) => { orgChartName = el.dataset.orgChart; orgChartYear = 'latest'; orgChartPattern = 'normal'; orgChartStack = []; navigateTo('view-org-chart'); });
   document.getElementById('org-chart-year').addEventListener('change', (e) => { orgChartYear = e.target.value; renderOrgChart(); });
   document.getElementById('org-chart-edit-btn').addEventListener('click', () => openOrgEditor(orgChartName));
+  // 「全体を表示」: 図を枠の幅に縮めて、全体を一度に見られるようにする(もう一度押すと元の大きさ)
+  document.getElementById('org-chart-fit-btn').addEventListener('click', (e) => {
+    const wrap = document.getElementById('org-chart-wrap');
+    const on = !wrap.classList.contains('fit');
+    wrap.classList.toggle('fit', on);
+    e.currentTarget.classList.toggle('active', on);
+  });
   document.getElementById('org-chart-pattern').addEventListener('click', (e) => {
     const chip = e.target.closest('[data-pattern]');
     if (!chip) return;

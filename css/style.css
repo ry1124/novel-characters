@@ -351,5 +351,9 @@ html, body {
 .tree-wrap::-webkit-scrollbar { height: 5px; }
 .tree-wrap::-webkit-scrollbar-track { background: transparent; }
 .tree-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+/* 組織図は縦にも長くなるので、枠の中で縦横どちらにもスクロールできるようにする
+   (縦をページ側のスクロールに任せると、iPhoneでは図の上を指でなぞっても下へ動かず、下の方が見られない) */
+.tree-wrap.org-chart-wrap { overflow: auto; max-height: calc(100vh - 290px); max-height: calc(100dvh - 290px); min-height: 240px; overscroll-behavior: contain; }
+.tree-wrap.org-chart-wrap.fit #org-chart-svg { width: 100% !important; height: auto !important; }
 .tree-wrap #org-chart-svg { width: auto; max-width: none; aspect-ratio: auto; display: block; background: #f4f2fa; }
 .tree-wrap #family-tree-svg { width: auto; max-width: none; aspect-ratio: auto; height: 320px; display: block; background: #f4f2fa; }
