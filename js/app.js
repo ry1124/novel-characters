@@ -1517,7 +1517,9 @@ function renderOrganizations() {
     const rowsHtml = entries.map((e) => {
       const roleText = e.roles.slice().sort((a, b) => (rankRole(a.role) - rankRole(b.role)) || byYear(a, b))
         .map((r) => `${r.role}(${formatRolePeriod(r, e.person)})`).join('、');
-      const periodText = e.periods.length ? `所属 ${e.periods.slice().sort(byYear).map((a) => formatRolePeriod(a, e.person)).join('、')}` : '';
+      // 期間がまったく分からない所属(開始・終了・生年が空)は「?年〜」とは出さず、「所属」とだけ出す
+      const knownPeriods = e.periods.filter((a) => a.startYear != null || a.endYear != null || e.person.birthYear != null);
+      const periodText = e.periods.length ? `所属${knownPeriods.length ? ' ' + knownPeriods.slice().sort(byYear).map((a) => formatRolePeriod(a, e.person)).join('、') : ''}` : '';
       const houses = isOrgVassal(name, e.person) ? vassalHousesOf(e.person, name) : [];
       return `<li class="list-item list-item-indent" data-person-id="${e.person.id}">
         <div class="list-item-main">
@@ -2196,7 +2198,11 @@ function guessSurname(name) {
   if (parts.length > 1) return parts[0];
   const known = new Set(people.map((p) => p.surname).filter(Boolean));
   knownOrganizationNames().forEach((o) => { if (o.endsWith('家') && o.length > 1) known.add(o.slice(0, -1)); });
-  return [...known].filter((s) => n.startsWith(s) && n.length > s.length).sort((a, b) => b.length - a.length)[0] || '';
+  const hit = [...known].filter((s) => n.startsWith(s) && n.length > s.length).sort((a, b) => b.length - a.length)[0];
+  if (hit) return hit;
+  // 初めて出てくる苗字: 漢字の名前なら、日本の苗字に多い頭の2文字(2文字の名前なら1文字)を苗字とみなす(違っていたら欄で直す)
+  if (/^[一-鿿々]{2,}$/.test(n)) return n.length >= 3 ? n.slice(0, 2) : n.slice(0, 1);
+  return '';
 }
 // 「○○家」の組織が無ければ作る(すでにあれば何もしない)
 async function ensureHouseOrganization(house) {
