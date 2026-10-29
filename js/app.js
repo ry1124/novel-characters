@@ -1755,7 +1755,9 @@ function renderBulkOrgRoleList() {
 function renderBulkAffiliationPersonList() {
   const q = (document.getElementById('bulk-affiliation-person-search').value || '').trim().toLowerCase();
   const listEl = document.getElementById('bulk-affiliation-person-list');
-  const filtered = q ? people.filter((p) => (p.name || '').toLowerCase().includes(q)) : people;
+  // 組織の編集では、すでに「今の所属メンバー」にいる人は出さない(選び直して同じ人の所属が増えないように)
+  const memberIds = new Set(editingOrgName != null ? bulkOrgMemberRows.map((r) => r.personId) : []);
+  const filtered = people.filter((p) => !memberIds.has(p.id) && (!q || (p.name || '').toLowerCase().includes(q)));
   const sorted = filtered.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
   listEl.innerHTML = sorted.map((p) => `<li class="list-item list-item-check" data-person-id="${p.id}">
       <input type="checkbox" class="bulk-affiliation-check" data-person-id="${p.id}" ${bulkAffiliationCheckedIds.has(p.id) ? 'checked' : ''}>
@@ -3475,8 +3477,21 @@ function wireLists() {
     roleRows.forEach((r) => { const role = r.role.trim(); if (!roleOrder.includes(role)) roleOrder.push(role); });
     if (peerages.length || roleOrder.length) {
       const vassalRoles = bulkOrgVassalRoles.filter((r) => roleOrder.includes(r));
-      await DB.putOrganization({ ...(organizations.find((o) => o.name === affiliation) || {}), name: affiliation, peerages, roleOrder, vassalRoles });
-    } else if (editing || organizations.some((o) => o.name === affiliation)) await DB.deleteOrganization(affiliation);
+      // 名前を既にある別の組織に変えた(合併した)時は、相手の爵位・役職の順番・家臣の役職も残して合わせる
+      // 「組織を追加」で既にある組織に足した時も同じく、今ある記録に合わせる(爵位が空で上書きされないように)
+      const target = !editing || editingOrgName !== affiliation ? organizations.find((o) => o.name === affiliation) : null;
+      const uniq = (list, key) => list.filter((x, i) => list.findIndex((y) => key(y) === key(x)) === i);
+      const merged = target ? {
+        peerages: uniq([...(target.peerages || []), ...peerages], (pg) => `${pg.title}|${pg.startYear}`).sort((a, b) => (a.startYear ?? 0) - (b.startYear ?? 0)),
+        roleOrder: uniq([...(target.roleOrder || []), ...roleOrder], (r) => r),
+        vassalRoles: uniq([...(target.vassalRoles || []), ...vassalRoles], (r) => r),
+      } : { peerages, roleOrder, vassalRoles };
+      await DB.putOrganization({ ...(target || organizations.find((o) => o.name === affiliation) || {}), name: affiliation, ...merged });
+    } else if (editing && editingOrgName === affiliation) {
+      // 編集画面で爵位も役職の順番も全部消した時だけ、組織の記録を消す。
+      // 「組織を追加」で既にある組織にメンバーを足しただけの時や、別の組織に名前を変えて合わせた時は、相手の記録を消さない
+      await DB.deleteOrganization(affiliation);
+    }
     if (editing && orgChartName === editingOrgName) orgChartName = affiliation; // 組織図から編集して名前を変えた時、戻った組織図も新しい名前で出す
     await refreshAll();
     goBack();
