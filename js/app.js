@@ -2536,26 +2536,81 @@ async function undoAutoSyncedData(oldEv, newEv) {
   }
 }
 
-// 子出来事の参加者は、親出来事にも自動で参加者として追加する(まだ参加していない人のみ)。
-// 既に親出来事にも参加している場合、子出来事で死亡していれば親出来事側も死亡に更新する(回復はさせない)
-async function syncParticipantsToParentEvent(ev) {
-  if (ev.parentEventId == null) return;
-  const parent = eventById(ev.parentEventId);
+// 子出来事の内容を親出来事の参加者に反映する(子出来事を作った・直した・消した時)。
+// oldChild=変更前の子出来事(新規ならnull)、newChild=変更後の子出来事(削除ならnull)。
+// 親出来事の参加者は、すべての子出来事から次のように計算し直す:
+//  ・子出来事のどれかに出ている人は親出来事にも参加者として入れる
+//  ・生死は子出来事の中で一番重いもの(死亡>負傷>生存>不明)。子で死亡を生存に戻せば親も戻る
+//  ・陣営は一番新しい子出来事で付けたもの(どの子でも空なら親の値のまま)
+//  ・討ち取った/負傷させた相手は、この子出来事で前に付けていた分を外してから、今の子出来事すべての分を足す
+//  ・子出来事から外した人は、子出来事から自動で入った人で、ほかの子出来事にもおらず親出来事で手を加えていない(備考・配置・ティアが空)なら親からも外す
+// 親出来事にさらに親がいれば、同じように上へ順に反映する
+const STATUS_SEVERITY = { 不明: 0, 生存: 1, 負傷: 2, 死亡: 3 };
+async function syncParentFromChild(parentId, oldChild, newChild) {
+  if (parentId == null) return;
+  const parent = eventById(parentId);
   if (!parent) return;
+  const before = JSON.parse(JSON.stringify(parent));
+  const childId = (newChild && newChild.id) ?? (oldChild && oldChild.id);
+  // 今の子出来事一覧(変更中の子は新しい内容に置き換え、削除・親の付け替えなら外す)
+  const children = events.filter((c) => c.parentEventId === parent.id && c.id !== childId);
+  if (newChild && newChild.parentEventId === parent.id) children.push(newChild);
+  children.sort((a, b) => eventTimeKey(a) - eventTimeKey(b));
+
   const byId = new Map((parent.participants || []).map((p) => [p.personId, p]));
-  let changed = false;
-  for (const part of ev.participants || []) {
-    const existing = byId.get(part.personId);
-    if (existing) {
-      if (part.status === '死亡' && existing.status !== '死亡') { existing.status = '死亡'; changed = true; }
-    } else {
-      byId.set(part.personId, { personId: part.personId, status: part.status, note: '', position: null, killedPersonIds: [], injuredPersonIds: [], faction: part.faction || '' });
-      changed = true;
+  const oldParts = new Map(((oldChild && oldChild.parentEventId === parent.id) ? oldChild.participants || [] : []).map((p) => [p.personId, p]));
+  const inChildren = new Map(); // personId → その人が出ている子出来事の参加者(時系列順)
+  children.forEach((c) => (c.participants || []).forEach((pt) => {
+    if (!inChildren.has(pt.personId)) inChildren.set(pt.personId, []);
+    inChildren.get(pt.personId).push(pt);
+  }));
+
+  for (const [pid, parts] of inChildren) {
+    let entry = byId.get(pid);
+    if (!entry) {
+      // fromChild: 子出来事から自動で入った人の印(子から外れた時に、親から外してよいかの判断に使う)
+      entry = { personId: pid, status: '生存', note: '', position: null, killedPersonIds: [], injuredPersonIds: [], faction: '', fromChild: true };
+      byId.set(pid, entry);
     }
+    entry.status = parts.reduce((worst, pt) => ((STATUS_SEVERITY[pt.status] ?? 0) > (STATUS_SEVERITY[worst] ?? 0) ? pt.status : worst), parts[0].status || '生存');
+    const latestFaction = parts.map((pt) => (pt.faction || '').trim()).filter(Boolean).pop();
+    if (latestFaction) entry.faction = latestFaction;
+    const old = oldParts.get(pid);
+    const merge = (idsOf, key) => {
+      const removed = new Set(old ? idsOf(old) : []);
+      const kept = idsOf(entry).filter((id) => !removed.has(id));
+      entry[key] = [...new Set([...kept, ...parts.flatMap((pt) => idsOf(pt))])];
+    };
+    merge(killedIdsOf, 'killedPersonIds');
+    merge(injuredIdsOf, 'injuredPersonIds');
   }
-  if (!changed) return;
+  // 子出来事から外れた人: ほかの子出来事にもおらず、親出来事で手を加えていなければ親からも外す
+  for (const pid of oldParts.keys()) {
+    if (inChildren.has(pid)) continue;
+    const entry = byId.get(pid);
+    if (!entry) continue;
+    const old = oldParts.get(pid);
+    const untouched = entry.fromChild && !(entry.note || '').trim() && !entry.position && !entry.tier;
+    if (untouched) { byId.delete(pid); continue; }
+    // 残す場合も、その子出来事で付けていた討ち取り・負傷の記録は外す
+    entry.killedPersonIds = killedIdsOf(entry).filter((id) => !killedIdsOf(old).includes(id));
+    entry.injuredPersonIds = injuredIdsOf(entry).filter((id) => !injuredIdsOf(old).includes(id));
+  }
+  // 外した人を「討ち取った/負傷させた相手」に入れている参加者からも外す
+  const remaining = new Set(byId.keys());
+  byId.forEach((p) => {
+    p.killedPersonIds = killedIdsOf(p).filter((id) => remaining.has(id));
+    p.injuredPersonIds = injuredIdsOf(p).filter((id) => remaining.has(id));
+  });
   parent.participants = Array.from(byId.values());
+  if (JSON.stringify(before.participants) === JSON.stringify(parent.participants)) return;
   await DB.updateEvent(parent);
+  // 親出来事でも、人物側(没年・陣営・強さ)への自動反映をやり直す
+  await undoAutoSyncedData(before, parent);
+  await syncDeathYearsFromParticipants(parent);
+  await syncFactionsFromParticipants(parent);
+  await syncStrengthFromParticipants(parent);
+  if (parent.parentEventId != null) await syncParentFromChild(parent.parentEventId, before, parent);
 }
 
 async function saveEventForm() {
@@ -2575,7 +2630,8 @@ async function saveEventForm() {
   const description = document.getElementById('event-form-description').value.trim();
   if (editingEventId) {
     const ev = eventById(editingEventId);
-    await undoAutoSyncedData(JSON.parse(JSON.stringify(ev)), { year, participants: draftParticipants });
+    const oldEv = JSON.parse(JSON.stringify(ev)); // 親出来事へ反映する時に、前の内容との差分を取るため
+    await undoAutoSyncedData(oldEv, { year, participants: draftParticipants });
     ev.title = title; ev.category = category; ev.year = year; ev.month = month; ev.endYear = endYear; ev.endMonth = endMonth;
     ev.description = description; ev.participants = draftParticipants;
     await DB.updateEvent(ev);
@@ -2583,14 +2639,14 @@ async function saveEventForm() {
     await syncDeathYearsFromParticipants(ev);
     await syncFactionsFromParticipants(ev);
     await syncStrengthFromParticipants(ev);
-    await syncParticipantsToParentEvent(ev);
+    await syncParentFromChild(ev.parentEventId, oldEv, ev);
   } else {
     const id = await DB.addEvent({ title, category, year, month, endYear, endMonth, description, terrainMap: null, participants: draftParticipants, parentEventId: eventFormParentId });
     currentEventId = id;
     await syncDeathYearsFromParticipants({ year, participants: draftParticipants });
     await syncFactionsFromParticipants({ year, participants: draftParticipants });
     await syncStrengthFromParticipants({ year, participants: draftParticipants });
-    await syncParticipantsToParentEvent({ parentEventId: eventFormParentId, participants: draftParticipants });
+    await syncParentFromChild(eventFormParentId, null, eventById(id) || { id, parentEventId: eventFormParentId, year, month, participants: draftParticipants });
   }
   await refreshAll();
   formDirty = false;
@@ -2603,8 +2659,10 @@ async function deleteEvent(id) {
     child.parentEventId = null;
     await DB.updateEvent(child);
   }
-  await undoAutoSyncedData(eventById(id), null);
+  const deleting = eventById(id);
+  await undoAutoSyncedData(deleting, null);
   await DB.deleteEvent(id);
+  if (deleting && deleting.parentEventId != null) await syncParentFromChild(deleting.parentEventId, deleting, null); // 子出来事を消したら親からも外す
   await refreshAll();
   navStack = navStack.filter((v) => v !== 'view-event-detail');
   goBack();
