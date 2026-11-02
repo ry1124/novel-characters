@@ -114,6 +114,14 @@ function currentStrengthOf(p) {
   return list.length ? list[list.length - 1] : null;
 }
 
+// その年までに最後に指定した強さ(年の無い記録は一番古い扱い)。その年以前の記録が無ければnull
+function strengthAt(p, year) {
+  if (!p) return null;
+  const list = (p.strength || []).filter((s) => s.tier && (year == null || s.startYear == null || s.startYear <= year))
+    .sort((a, b) => (a.startYear ?? -1e9) - (b.startYear ?? -1e9));
+  return list.length ? list[list.length - 1] : null;
+}
+
 // これまでで一番強かった時点(最高ティア・同ティアなら最高点)
 function maxStrengthOf(p) {
   const list = p.strength || [];
@@ -1146,8 +1154,13 @@ function renderEventDetail() {
     listEl.innerHTML = participants.map(participantItemHtml).join('');
   }
 
-  // この戦いの時点のティア表: ティアを付けた参加者を強い順に、ティアごとの見出しで並べる
-  const tiered = participants.filter((p) => p.tier)
+  // この戦いの時点のティア表: ティアを付けた参加者を強い順に、ティアごとの見出しで並べる。
+  // この出来事でティアを付けていない人は、その年までに最後に指定した強さ(人物の強さの履歴)を使う
+  const tiered = participants.map((p) => {
+    if (p.tier) return { ...p, fromYear: null };
+    const last = strengthAt(pm.get(p.personId), ev.year);
+    return last ? { ...p, tier: last.tier, score: last.score, fromYear: last.startYear ?? '' } : null;
+  }).filter(Boolean)
     .sort((a, b) => strengthRankValue(b) - strengthRankValue(a));
   document.getElementById('event-tier-label').style.display = tiered.length ? '' : 'none';
   let lastTier = null;
@@ -1156,10 +1169,11 @@ function renderEventDetail() {
     const header = p.tier !== lastTier ? `<li class="list-group-header">${escapeHtml(p.tier)}</li>` : '';
     lastTier = p.tier;
     const faction = (p.faction || '').trim();
+    const source = p.fromYear == null ? '' : p.fromYear !== '' ? `${p.fromYear}年の値` : '前回の値';
     return `${header}<li class="list-item list-item-indent" data-person-id="${p.personId}">
       <div class="list-item-main">
         <div class="list-item-title">${escapeHtml(person ? nameAt(person, ev.year) : '(不明な人物)')}</div>
-        <div class="list-item-sub">${escapeHtml([p.score != null && p.score !== '' ? `${p.score}点` : '', faction].filter(Boolean).join(' ・ '))}</div>
+        <div class="list-item-sub">${escapeHtml([p.score != null && p.score !== '' ? `${p.score}点` : '', faction, source].filter(Boolean).join(' ・ '))}</div>
       </div>
       <span class="list-item-chevron">›</span>
     </li>`;
