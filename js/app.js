@@ -122,6 +122,15 @@ function strengthAt(p, year) {
   return list.length ? list[list.length - 1] : null;
 }
 
+// そのティアになった年(同じティアが何年も続いていれば、続いている最初の年)。年の無い記録から続いていればnull
+function tierSinceYear(p, year, tier) {
+  const list = (p.strength || []).filter((s) => s.tier && (year == null || s.startYear == null || s.startYear <= year))
+    .sort((a, b) => (a.startYear ?? -1e9) - (b.startYear ?? -1e9));
+  let since = null;
+  for (let i = list.length - 1; i >= 0 && list[i].tier === tier; i--) since = list[i].startYear ?? null;
+  return since;
+}
+
 // これまでで一番強かった時点(最高ティア・同ティアなら最高点)
 function maxStrengthOf(p) {
   const list = p.strength || [];
@@ -1159,7 +1168,9 @@ function renderEventDetail() {
   const tiered = participants.map((p) => {
     if (p.tier) return { ...p, fromYear: null };
     const last = strengthAt(pm.get(p.personId), ev.year);
-    return last ? { ...p, tier: last.tier, score: last.score, fromYear: last.startYear ?? '' } : null;
+    // 年が変わってもティアが同じなら、その年ではなくそのティアになった年を出す
+    const person = pm.get(p.personId);
+    return last ? { ...p, tier: last.tier, score: last.score, fromYear: tierSinceYear(person, ev.year, last.tier) ?? '' } : null;
   }).filter(Boolean)
     .sort((a, b) => strengthRankValue(b) - strengthRankValue(a));
   document.getElementById('event-tier-label').style.display = tiered.length ? '' : 'none';
@@ -1169,7 +1180,7 @@ function renderEventDetail() {
     const header = p.tier !== lastTier ? `<li class="list-group-header">${escapeHtml(p.tier)}</li>` : '';
     lastTier = p.tier;
     const faction = (p.faction || '').trim();
-    const source = p.fromYear == null ? '' : p.fromYear !== '' ? `${p.fromYear}年の値` : '前回の値';
+    const source = p.fromYear == null ? '' : p.fromYear !== '' ? `${p.fromYear}年から` : '前回の値';
     return `${header}<li class="list-item list-item-indent" data-person-id="${p.personId}">
       <div class="list-item-main">
         <div class="list-item-title">${escapeHtml(person ? nameAt(person, ev.year) : '(不明な人物)')}</div>
